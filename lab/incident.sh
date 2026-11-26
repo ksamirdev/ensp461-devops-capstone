@@ -27,5 +27,6 @@ rec 'echo "LogQL: sum by (level) (count_over_time({namespace=\"textstats\", app=
 # Turning self-heal back on is the whole fix: Argo CD sees replicas 0 != 1 in Git and restores it
 rec "kubectl -n argocd patch application textstats --type merge -p '{\"spec\":{\"syncPolicy\":{\"automated\":{\"selfHeal\":true}}}}' && date -u +'self-heal on at %H:%M:%S'"
 rec 'until [ "$(kubectl -n textstats get statefulset postgres -o jsonpath="{.status.readyReplicas}")" = 1 ]; do sleep 2; done; date -u +"database ready again at %H:%M:%S (restored by Argo CD)"'
-rec 'until kubectl -n monitoring logs deploy/alert-sink | grep -q "\"resolved\", \"alertname\": \"TextstatsHighErrorRate\""; do sleep 5; done; kubectl -n monitoring logs deploy/alert-sink | tail -3'
+# the resolved notification must come after the firing one from this drill, not from an earlier incident
+rec 'until kubectl -n monitoring logs deploy/alert-sink | sed -n "/\"firing\", \"alertname\": \"TextstatsHighErrorRate\"/,\$p" | tail -n +2 | grep -q "\"resolved\", \"alertname\": \"TextstatsHighErrorRate\""; do sleep 5; done; kubectl -n monitoring logs deploy/alert-sink | tail -2'
 rec 'echo "5xx/s now:"; prom "sum(rate(textstats_http_requests_total{route=\"/stats\",status=~\"5..\"}[1m])) or vector(0)"'

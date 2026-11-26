@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Restores the newest (or the given) dump from the postgres-backups volume into the live database.
-#   lab/restore.sh [textstats-YYYYMMDDTHHMMSSZ.dump]
+# Restores a dump from the postgres-backups volume into the live database.
+#   lab/restore.sh [textstats-YYYYMMDDTHHMMSSZ.dump | latest]
+# After data loss, name the last dump taken BEFORE the incident: a scheduled backup that ran after it holds the loss too.
 set -euo pipefail
 DUMP=${1:-latest}
 started=$(date +%s)
@@ -29,6 +30,8 @@ spec:
           args:
             - |
               f=\$( [ "$DUMP" = latest ] && ls -1t /backups/*.dump | head -1 || echo /backups/$DUMP )
+              # the network policy admits a new pod's IP a few seconds after it starts
+              until pg_isready -q -t 2; do sleep 1; done
               echo "restoring \$f"
               pg_restore --clean --if-exists --no-owner --single-transaction --dbname=textstats "\$f"
               echo "restore ok"
@@ -37,6 +40,8 @@ spec:
       volumes:
         - {name: backups, persistentVolumeClaim: {claimName: postgres-backups}}
 YAML
-kubectl -n textstats wait --for=condition=complete job/restore --timeout=180s >/dev/null
+until [ "$(kubectl -n textstats get job restore -o jsonpath='{.status.succeeded}{.status.failed}')" != "" ]; do sleep 1; done
+[ "$(kubectl -n textstats get job restore -o jsonpath='{.status.succeeded}')" = 1 ] \
+  || { kubectl -n textstats logs job/restore; echo "restore FAILED"; exit 1; }
 kubectl -n textstats logs job/restore
 echo "restore took $(( $(date +%s) - started )) s"

@@ -1,5 +1,5 @@
 # Shared helpers for the lab scripts: run from the repo root after sourcing lab/rec.sh.
-SHOTS=evidence/screenshots
+SHOTS=$PWD/evidence/screenshots
 PROM=http://prometheus.k8s.orb.local
 # instant PromQL query, one "labels value" line per series
 prom() { curl -s --data-urlencode "query=$1" $PROM/api/v1/query | jq -r '.data.result[] | "\(.metric | del(.__name__) | to_entries | map("\(.key)=\(.value)") | join(",")) \(.value[1])"'; }

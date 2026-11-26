@@ -24,16 +24,16 @@ def stat(i, title, x, expr, unit, thresholds, decimals=2):
 
 panels = [
     stat(1, "Requests / s", 0, "textstats:requests:rate5m", "reqps", [(None, "blue")], 1),
-    stat(2, "Error ratio (5m)", 4, "textstats:error_ratio:rate5m", "percentunit",
+    stat(2, "Error ratio", 4, "textstats:error_ratio:rate5m", "percentunit",
          [(None, "green"), (0.01, "orange"), (0.05, "red")]),
-    stat(3, "p95 latency (5m)", 8, "textstats:latency_p95_seconds:rate5m", "s",
+    stat(3, "p95 latency", 8, "textstats:latency_p95_seconds:rate5m", "s",
          [(None, "green"), (0.1, "orange"), (0.25, "red")], 3),
     # 99.5% SLO over 30 days: budget = 0.5% of requests may fail
-    stat(4, "Error budget left (30d, SLO 99.5%)", 12,
+    stat(4, "Error budget", 12,
          "1 - (sum(increase(textstats_http_requests_total{route=\"/stats\",status=~\"5..\"}[30d])) or vector(0)) "
          "/ (0.005 * sum(increase(textstats_http_requests_total{route=\"/stats\"}[30d])))",
          "percentunit", [(None, "red"), (0.25, "orange"), (0.5, "green")], 1),
-    stat(5, "Pods answering", 16, "count(up{namespace=\"textstats\",app=\"text-stats\"} == 1)", "none", [(None, "red"), (2, "green")], 0),
+    stat(5, "Pods up", 16, "count(up{namespace=\"textstats\",app=\"text-stats\"} == 1)", "none", [(None, "red"), (2, "green")], 0),
     stat(6, "Firing alerts", 20, "count(ALERTS{alertstate=\"firing\"}) or vector(0)", "none",
          [(None, "green"), (1, "red")], 0),
     panel(7, "Requests / s by status", "timeseries", 0, 5, 12, 8,
