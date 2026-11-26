@@ -2,7 +2,8 @@
 FROM mirror.gcr.io/library/python:3.13-slim AS build
 RUN python -m venv /venv
 COPY requirements.txt .
-RUN /venv/bin/pip install --no-cache-dir -r requirements.txt
+# pip is only needed here; removing it from the venv drops its vendored libraries (urllib3, msgpack) too
+RUN /venv/bin/pip install --no-cache-dir -r requirements.txt && /venv/bin/pip uninstall -y pip
 
 # Stage 2: runtime image with only the virtualenv and the code; no pip, no compilers, no build cache
 FROM mirror.gcr.io/library/python:3.13-slim
