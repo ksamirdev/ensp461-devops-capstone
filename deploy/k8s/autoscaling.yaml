@@ -1,0 +1,28 @@
+# 3 to 8 pods, targeting 60% of the CPU request. Scale-down waits 2 minutes so a short dip
+# in traffic does not remove pods that are needed again a moment later.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: text-stats
+spec:
+  scaleTargetRef: {apiVersion: argoproj.io/v1alpha1, kind: Rollout, name: text-stats}
+  minReplicas: 3
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: 60}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 120
+---
+# Voluntary disruptions (node drain, cluster upgrade) may take down at most one pod at a time
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: text-stats
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: {app: text-stats}

@@ -1,0 +1,142 @@
+# text-stats released as a canary through Traefik weighted routing. A new version gets 10% of
+# requests, then 30%, then 60%, and must pass a Prometheus analysis after each step. A failed analysis
+# aborts the rollout: weights go back to 100% stable and the canary pods are scaled down.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: text-stats
+spec:
+  # replicas is owned by the HorizontalPodAutoscaler (autoscaling.yaml)
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels: {app: text-stats}
+  template:
+    metadata:
+      labels: {app: text-stats}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5000"
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: app
+          image: ghcr.io/ksamirdev/ensp461-devops-capstone
+          env:
+            - name: DATABASE_URL
+              valueFrom: {secretKeyRef: {name: textstats-database-url, key: DATABASE_URL}}
+          ports: [{containerPort: 5000}]
+          readinessProbe:
+            httpGet: {path: /readyz, port: 5000}
+            periodSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet: {path: /healthz, port: 5000}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+  strategy:
+    canary:
+      stableService: text-stats-stable
+      canaryService: text-stats-canary
+      trafficRouting:
+        traefik:
+          weightedTraefikServiceName: text-stats
+      steps:
+        - setWeight: 10
+        - pause: {duration: 30s}
+        - analysis: &health
+            templates: [{templateName: canary-health}]
+            args:
+              - name: canary-hash
+                valueFrom: {podTemplateHashValue: Latest}
+        - setWeight: 30
+        - pause: {duration: 30s}
+        - analysis: *health
+        - setWeight: 60
+        - pause: {duration: 30s}
+        - analysis: *health
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: canary-health
+spec:
+  args:
+    - name: canary-hash
+  metrics:
+    # Share of /stats requests served by the canary pods that failed with 5xx, over the last minute
+    - name: error-rate
+      interval: 20s
+      count: 3
+      failureLimit: 1
+      successCondition: result[0] <= 0.02
+      provider:
+        prometheus:
+          address: http://prometheus-server.monitoring.svc
+          query: |
+            (sum(rate(textstats_http_requests_total{route="/stats",status=~"5..",rollouts_pod_template_hash="{{args.canary-hash}}"}[1m])) or vector(0))
+            /
+            sum(rate(textstats_http_requests_total{route="/stats",rollouts_pod_template_hash="{{args.canary-hash}}"}[1m]))
+    # 95th percentile latency of /stats on the canary pods
+    - name: p95-latency-seconds
+      interval: 20s
+      count: 3
+      failureLimit: 1
+      successCondition: result[0] < 0.25
+      provider:
+        prometheus:
+          address: http://prometheus-server.monitoring.svc
+          query: |
+            histogram_quantile(0.95, sum by (le) (rate(textstats_http_request_duration_seconds_bucket{route="/stats",rollouts_pod_template_hash="{{args.canary-hash}}"}[1m])))
+---
+# Argo Rollouts adds the pod-template hash to these selectors: stable -> current version, canary -> new version
+apiVersion: v1
+kind: Service
+metadata:
+  name: text-stats-stable
+spec:
+  selector: {app: text-stats}
+  ports: [{port: 80, targetPort: 5000}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: text-stats-canary
+spec:
+  selector: {app: text-stats}
+  ports: [{port: 80, targetPort: 5000}]
+---
+# Traefik splits requests between the two Services; Argo Rollouts rewrites the weights at each step
+apiVersion: traefik.io/v1alpha1
+kind: TraefikService
+metadata:
+  name: text-stats
+spec:
+  weighted:
+    services:
+      - {name: text-stats-stable, port: 80, weight: 100}
+      - {name: text-stats-canary, port: 80, weight: 0}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: text-stats
+spec:
+  entryPoints: [web]
+  routes:
+    - match: Host(`textstats.k8s.orb.local`)
+      kind: Rule
+      services:
+        - {name: text-stats, kind: TraefikService}

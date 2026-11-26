@@ -1,0 +1,33 @@
+# Synthetic users: a steady stream of POST /stats through Traefik, the same path real users take,
+# so canary weights, analysis, dashboards and alerts all see live traffic.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: traffic}
+  template:
+    metadata:
+      labels: {app: traffic}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: curl
+          image: curlimages/curl:8.23.0
+          command: [sh, -c]
+          args:
+            - |
+              while true; do
+                curl -s -o /dev/null -m 2 -X POST -H 'Host: textstats.k8s.orb.local' -H 'Content-Type: application/json' \
+                  -d '{"text":"synthetic user traffic for the capstone"}' http://traefik.traefik.svc/stats
+                sleep 0.1
+              done
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}

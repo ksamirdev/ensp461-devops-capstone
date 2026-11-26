@@ -1,0 +1,62 @@
+# Logical backup every 10 minutes (RPO <= 10 min): pg_dump in custom format to its own volume,
+# verified by listing its table of contents, keeping the newest 24 dumps (4 hours).
+# lab/restore.sh restores any of them with pg_restore.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-backups
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 1Gi}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels: {app: postgres-backup}
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            fsGroup: 999
+          containers:
+            - name: backup
+              image: mirror.gcr.io/library/postgres:18
+              env:
+                - name: PGUSER
+                  valueFrom: {secretKeyRef: {name: postgres-credentials, key: username}}
+                - name: PGPASSWORD
+                  valueFrom: {secretKeyRef: {name: postgres-credentials, key: password}}
+                - {name: PGHOST, value: postgres}
+                - {name: PGDATABASE, value: textstats}
+              command: [sh, -ec]
+              args:
+                - |
+                  f=/backups/textstats-$(date -u +%Y%m%dT%H%M%SZ).dump
+                  pg_dump --format=custom --file="$f.partial"
+                  pg_restore --list "$f.partial" > /dev/null   # an unreadable dump fails the job
+                  mv "$f.partial" "$f"
+                  ls -1t /backups/*.dump | tail -n +25 | xargs -r rm --
+                  echo "backup ok: $f $(du -h "$f" | cut -f1), $(ls /backups/*.dump | wc -l) dumps kept"
+              resources:
+                requests: {cpu: 20m, memory: 32Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: {drop: [ALL]}
+              volumeMounts:
+                - {name: backups, mountPath: /backups}
+          volumes:
+            - name: backups
+              persistentVolumeClaim: {claimName: postgres-backups}
