@@ -13,6 +13,10 @@ spec:
       labels: {app: traffic}
     spec:
       automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: curl
           image: curlimages/curl:8.23.0
@@ -27,7 +31,6 @@ spec:
           resources:
             requests: {cpu: 10m, memory: 16Mi}
           securityContext:
-            runAsNonRoot: true
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}

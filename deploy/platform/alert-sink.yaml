@@ -13,6 +13,11 @@ spec:
     metadata:
       labels: {app: alert-sink}
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: sink
           image: mirror.gcr.io/library/python:3.13-slim
@@ -35,8 +40,6 @@ spec:
           resources:
             requests: {cpu: 5m, memory: 24Mi}
           securityContext:
-            runAsNonRoot: true
-            runAsUser: 10001
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
