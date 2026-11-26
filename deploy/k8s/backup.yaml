@@ -45,6 +45,8 @@ spec:
               command: [sh, -ec]
               args:
                 - |
+                  # the network policy admits a new pod's IP a few seconds after it starts; wait up to 60 s
+                  for i in $(seq 60); do pg_isready -q -t 2 && break; sleep 1; done
                   f=/backups/textstats-$(date -u +%Y%m%dT%H%M%SZ).dump
                   pg_dump --format=custom --file="$f.partial"
                   pg_restore --list "$f.partial" > /dev/null   # an unreadable dump fails the job
