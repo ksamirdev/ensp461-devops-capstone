@@ -1,0 +1,3 @@
+[lint.per-file-ignores]
+# report prose: long HTML paragraphs are split into adjacent string literals on purpose
+"lab/report_content.py" = ["ISC004"]

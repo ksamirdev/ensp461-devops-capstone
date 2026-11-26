@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" font-family="Helvetica Neue, Arial, sans-serif" font-size="12">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker>
+  </defs>
+  <style>
+    .box { fill: #fff; stroke: #333; stroke-width: 1.2; rx: 6; }
+    .ns { fill: #f6f6f4; stroke: #999; stroke-dasharray: 4 3; rx: 8; }
+    .ci { fill: #eef3fb; stroke: #4a6fa5; rx: 6; }
+    .t { font-weight: 700; }
+    .s { fill: #555; font-size: 10.5px; }
+    .l { stroke: #333; stroke-width: 1.2; fill: none; marker-end: url(#a); }
+    .d { stroke: #4a6fa5; stroke-width: 1.2; fill: none; stroke-dasharray: 5 3; marker-end: url(#a); }
+    .lab { fill: #4a6fa5; font-size: 10.5px; }
+  </style>
+
+  <!-- Developer and GitHub -->
+  <rect class="box" x="20" y="20" width="120" height="44"/>
+  <text class="t" x="80" y="40" text-anchor="middle">Developer</text>
+  <text class="s" x="80" y="55" text-anchor="middle">git push to main</text>
+  <rect class="ci" x="190" y="12" width="520" height="62"/>
+  <text class="t" x="200" y="31">GitHub Actions (ci-cd.yml, arm64 runners)</text>
+  <text class="s" x="200" y="48">lint + unit tests  |  gitleaks, bandit, pip-audit, trivy config  |  integration tests (PostgreSQL)</text>
+  <text class="s" x="200" y="63">build + trivy image scan + smoke test  |  publish to GHCR  |  deliver: commit new tag to deploy/k8s</text>
+  <rect class="box" x="760" y="20" width="120" height="44"/>
+  <text class="t" x="820" y="40" text-anchor="middle">GHCR</text>
+  <text class="s" x="820" y="55" text-anchor="middle">immutable tags</text>
+  <path class="l" d="M140,42 H188"/>
+  <path class="l" d="M710,42 H758"/>
+
+  <!-- Cluster -->
+  <rect class="ns" x="20" y="100" width="860" height="400"/>
+  <text class="t" x="34" y="120">OrbStack Kubernetes v1.36 (built and kept in shape by Ansible: infra/ansible/site.yml)</text>
+
+  <rect class="box" x="40" y="140" width="170" height="60"/>
+  <text class="t" x="125" y="163" text-anchor="middle">Argo CD</text>
+  <text class="s" x="125" y="180" text-anchor="middle">polls deploy/k8s on main</text>
+  <text class="s" x="125" y="193" text-anchor="middle">auto-sync, prune, self-heal</text>
+  <path class="d" d="M450,74 C450,110 200,105 150,138"/>
+  <text class="lab" x="462" y="92">Argo CD pulls from Git: the cluster is not reachable from GitHub</text>
+
+  <rect class="box" x="40" y="225" width="170" height="60"/>
+  <text class="t" x="125" y="248" text-anchor="middle">Argo Rollouts</text>
+  <text class="s" x="125" y="265" text-anchor="middle">canary 10 / 30 / 60 / 100 %</text>
+  <text class="s" x="125" y="278" text-anchor="middle">sets weights, queries Prometheus</text>
+
+  <rect class="box" x="40" y="310" width="170" height="60"/>
+  <text class="t" x="125" y="333" text-anchor="middle">Vault + External Secrets</text>
+  <text class="s" x="125" y="350" text-anchor="middle">secret/textstats/*, 15 min tokens</text>
+  <text class="s" x="125" y="363" text-anchor="middle">synced every minute</text>
+
+  <rect class="box" x="40" y="395" width="170" height="85"/>
+  <text class="t" x="125" y="418" text-anchor="middle">Traefik</text>
+  <text class="s" x="125" y="435" text-anchor="middle">LoadBalancer on :80</text>
+  <text class="s" x="125" y="450" text-anchor="middle">*.k8s.orb.local routes</text>
+  <text class="s" x="125" y="465" text-anchor="middle">weighted TraefikService</text>
+
+  <!-- textstats namespace -->
+  <rect class="ns" x="250" y="140" width="330" height="340" style="fill:#fff"/>
+  <text class="t" x="264" y="160">namespace textstats (default-deny NetworkPolicy)</text>
+  <rect class="box" x="270" y="175" width="135" height="58"/>
+  <text class="t" x="337" y="196" text-anchor="middle">text-stats stable</text>
+  <text class="s" x="337" y="212" text-anchor="middle">3-8 pods (HPA), PDB</text>
+  <text class="s" x="337" y="225" text-anchor="middle">non-root, read-only</text>
+  <rect class="box" x="425" y="175" width="135" height="58"/>
+  <text class="t" x="492" y="196" text-anchor="middle">text-stats canary</text>
+  <text class="s" x="492" y="212" text-anchor="middle">new version during</text>
+  <text class="s" x="492" y="225" text-anchor="middle">a release only</text>
+  <rect class="box" x="270" y="270" width="135" height="58"/>
+  <text class="t" x="337" y="291" text-anchor="middle">PostgreSQL 18</text>
+  <text class="s" x="337" y="307" text-anchor="middle">StatefulSet + PVC</text>
+  <text class="s" x="337" y="320" text-anchor="middle">only app + backup allowed</text>
+  <rect class="box" x="425" y="270" width="135" height="58"/>
+  <text class="t" x="492" y="291" text-anchor="middle">postgres-backup</text>
+  <text class="s" x="492" y="307" text-anchor="middle">CronJob every 10 min</text>
+  <text class="s" x="492" y="320" text-anchor="middle">pg_dump to backup PVC</text>
+  <rect class="box" x="270" y="365" width="290" height="44"/>
+  <text class="t" x="415" y="385" text-anchor="middle">traffic generator (synthetic users)</text>
+  <text class="s" x="415" y="400" text-anchor="middle">POST /stats through Traefik, ~10 requests/s</text>
+  <path class="l" d="M300,233 V268"/>
+  <path class="l" d="M440,233 L390,268"/>
+  <path class="l" d="M425,299 H407"/>
+  <path class="l" d="M210,420 H232 V204 H268"/>
+  <path class="l" d="M232,250 H530 V235"/>
+  <text class="s" x="540" y="254">10-60 %</text>
+  <path class="l" d="M270,400 H212"/>
+  <path class="l" d="M210,170 H248"/>
+  <text class="s" x="214" y="164">apply</text>
+  <path class="l" d="M210,340 H268"/>
+  <text class="s" x="213" y="334">secrets</text>
+
+  <!-- monitoring -->
+  <rect class="ns" x="620" y="140" width="240" height="340" style="fill:#fff"/>
+  <text class="t" x="634" y="160">namespace monitoring</text>
+  <rect class="box" x="640" y="175" width="200" height="50"/>
+  <text class="t" x="740" y="195" text-anchor="middle">Prometheus</text>
+  <text class="s" x="740" y="212" text-anchor="middle">scrapes pods, SLO + 5 alert rules</text>
+  <rect class="box" x="640" y="245" width="200" height="50"/>
+  <text class="t" x="740" y="265" text-anchor="middle">Alertmanager</text>
+  <text class="s" x="740" y="282" text-anchor="middle">critical to pager, warning to chat</text>
+  <rect class="box" x="640" y="315" width="200" height="50"/>
+  <text class="t" x="740" y="335" text-anchor="middle">Alloy to Loki</text>
+  <text class="s" x="740" y="352" text-anchor="middle">JSON logs, LogQL, 7-day retention</text>
+  <rect class="box" x="640" y="385" width="200" height="50"/>
+  <text class="t" x="740" y="405" text-anchor="middle">Grafana</text>
+  <text class="s" x="740" y="422" text-anchor="middle">12-panel dashboard from Git</text>
+  <path class="l" d="M740,225 V243"/>
+  <path class="l" d="M638,200 H582"/>
+  <text class="s" x="590" y="194">scrape</text>
+  <path class="l" d="M638,340 H582"/>
+  <text class="s" x="592" y="334">logs</text>
+</svg>
