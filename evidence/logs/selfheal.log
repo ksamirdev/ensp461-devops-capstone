@@ -1,0 +1,25 @@
+$ kubectl -n textstats get pods -l app=text-stats -o wide
+NAME                          READY   STATUS    RESTARTS   AGE   IP               NODE       NOMINATED NODE   READINESS GATES
+text-stats-7cbcffb8d5-lhx2d   1/1     Running   0          51m   192.168.194.10   orbstack   <none>           <none>
+text-stats-7cbcffb8d5-n5rm5   1/1     Running   0          41m   192.168.194.23   orbstack   <none>           <none>
+text-stats-7cbcffb8d5-nqbdd   1/1     Running   0          83s   192.168.194.14   orbstack   <none>           <none>
+
+$ echo "5xx responses in the 2 minutes before: $(fivexx)"
+5xx responses in the 2 minutes before: 0
+
+$ victim=$(kubectl -n textstats get pods -l app=text-stats -o jsonpath="{.items[0].metadata.name}"); kubectl -n textstats delete pod $victim --grace-period=0 --force 2>/dev/null; date -u +"killed $victim at %H:%M:%S"
+  until [ "$(kubectl -n textstats get pods -l app=text-stats --no-headers | grep -v $victim | grep -c " 1/1 ")" = "$(kubectl -n textstats get rollout text-stats -o jsonpath="{.spec.replicas}")" ]; do sleep 1; done
+  date -u +"replacement pod ready at %H:%M:%S"
+pod "text-stats-7cbcffb8d5-lhx2d" force deleted from textstats namespace
+killed text-stats-7cbcffb8d5-lhx2d at 09:07:44
+replacement pod ready at 09:07:47
+
+$ kubectl -n textstats get pods -l app=text-stats
+NAME                          READY   STATUS    RESTARTS   AGE
+text-stats-7cbcffb8d5-2smzm   1/1     Running   0          3s
+text-stats-7cbcffb8d5-n5rm5   1/1     Running   0          41m
+text-stats-7cbcffb8d5-nqbdd   1/1     Running   0          87s
+
+$ sleep 90; echo "5xx responses in the 2 minutes around the kill: $(fivexx)"
+5xx responses in the 2 minutes around the kill: 0
+

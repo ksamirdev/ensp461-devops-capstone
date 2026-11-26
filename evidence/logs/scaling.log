@@ -1,0 +1,70 @@
+$ kubectl -n textstats get hpa text-stats
+NAME         REFERENCE            TARGETS        MINPODS   MAXPODS   REPLICAS   AGE
+text-stats   Rollout/text-stats   cpu: 47%/60%   3         8         3          67m
+
+$ kubectl top pods -n textstats -l app=text-stats
+NAME                          CPU(cores)   MEMORY(bytes)   
+text-stats-7cbcffb8d5-jtvkc   27m          44Mi            
+text-stats-7cbcffb8d5-lhx2d   25m          44Mi            
+text-stats-7cbcffb8d5-n5rm5   26m          45Mi            
+
+$ kubectl -n textstats delete job load --ignore-not-found >/dev/null; kubectl -n textstats create job load --image=curlimages/curl:8.23.0 -- sh -c 'end=$(($(date +%s)+240)); for i in $(seq 20); do (while [ $(date +%s) -lt $end ]; do curl -s -o /dev/null -X POST -H "Host: textstats.k8s.orb.local" -H "Content-Type: application/json" -d "{\"text\":\"load test sentence number $i with a few more words to count\"}" http://traefik.traefik.svc/stats; done) & done; wait'
+job.batch/load created
+
+$ start=$(date +%s); last=""; while [ $(( $(date +%s) - start )) -lt 540 ]; do s=$(hpa); [ "$s" != "$last" ] && echo "$(date -u +%H:%M:%S) $s" && last=$s; sleep 5; done
+08:53:24 47% cpu, replicas 3 -> 3
+08:53:29 52% cpu, replicas 3 -> 3
+08:53:44 380% cpu, replicas 3 -> 7
+08:54:00 416% cpu, replicas 7 -> 8
+08:54:15 167% cpu, replicas 8 -> 8
+08:54:30 217% cpu, replicas 8 -> 8
+08:54:46 229% cpu, replicas 8 -> 8
+08:55:01 221% cpu, replicas 8 -> 8
+08:55:16 223% cpu, replicas 8 -> 8
+08:55:31 221% cpu, replicas 8 -> 8
+08:55:47 231% cpu, replicas 8 -> 8
+08:56:02 211% cpu, replicas 8 -> 8
+08:56:17 190% cpu, replicas 8 -> 8
+08:56:32 180% cpu, replicas 8 -> 8
+08:56:48 193% cpu, replicas 8 -> 8
+08:57:03 194% cpu, replicas 8 -> 8
+08:57:18 192% cpu, replicas 8 -> 8
+08:57:33 184% cpu, replicas 8 -> 8
+08:57:49 70% cpu, replicas 8 -> 8
+08:58:04 21% cpu, replicas 8 -> 8
+08:58:19 22% cpu, replicas 8 -> 8
+08:58:34 23% cpu, replicas 8 -> 8
+08:58:49 22% cpu, replicas 8 -> 8
+08:59:05 21% cpu, replicas 8 -> 8
+08:59:20 22% cpu, replicas 8 -> 8
+08:59:45 23% cpu, replicas 8 -> 4
+09:00:00 26% cpu, replicas 4 -> 4
+09:00:16 38% cpu, replicas 4 -> 4
+09:00:31 48% cpu, replicas 4 -> 4
+09:00:46 39% cpu, replicas 4 -> 4
+09:01:01 37% cpu, replicas 4 -> 4
+09:01:16 38% cpu, replicas 4 -> 4
+09:01:32 39% cpu, replicas 4 -> 4
+09:01:47 40% cpu, replicas 4 -> 4
+09:02:02 38% cpu, replicas 4 -> 4
+09:02:17 39% cpu, replicas 4 -> 4
+
+$ kubectl -n textstats describe hpa text-stats | sed -n '/Events:/,$p'
+Events:
+  Type    Reason             Age                From                       Message
+  ----    ------             ----               ----                       -------
+  Normal  SuccessfulRescale  23m (x2 over 44m)  horizontal-pod-autoscaler  New size: 4; reason: cpu resource utilization (percentage of request) above target
+  Normal  SuccessfulRescale  8m53s              horizontal-pod-autoscaler  New size: 7; reason: cpu resource utilization (percentage of request) above target
+  Normal  SuccessfulRescale  8m38s              horizontal-pod-autoscaler  New size: 8; reason: cpu resource utilization (percentage of request) above target
+  Normal  SuccessfulRescale  2m52s              horizontal-pod-autoscaler  New size: 4; reason: All metrics below target
+  Normal  SuccessfulRescale  7s (x3 over 41m)   horizontal-pod-autoscaler  New size: 3; reason: All metrics below target
+
+$ echo "5xx during the load test:"; prom "sum(increase(textstats_http_requests_total{route=\"/stats\",status=~\"5..\"}[10m])) or vector(0)"; echo "requests during the load test:"; prom "sum(increase(textstats_http_requests_total{route=\"/stats\"}[10m]))"
+5xx during the load test:
+ 0
+requests during the load test:
+ 57108.13850031118
+
+$ kubectl -n textstats delete job load
+job.batch "load" deleted from textstats namespace
+

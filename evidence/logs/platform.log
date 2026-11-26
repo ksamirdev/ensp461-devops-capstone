@@ -1,0 +1,542 @@
+$ kubectl config current-context
+orbstack
+
+$ kubectl get nodes -o wide
+NAME       STATUS   ROLES                  AGE    VERSION        INTERNAL-IP     EXTERNAL-IP   OS-IMAGE   KERNEL-VERSION                                CONTAINER-RUNTIME
+orbstack   Ready    control-plane,master   207d   v1.36.5+orb1   192.168.139.2   <none>        OrbStack   7.2.12-orbstack-00394-gbecdd6130068 (arm64)   docker://29.8.2
+
+$ cd infra/ansible && ANSIBLE_FORCE_COLOR=0 ansible-playbook site.yml --tags platform,vault,observability
+
+PLAY [Capstone platform] *******************************************************
+
+TASK [platform : Helm repositories] ********************************************
+Thursday 26 November 2026  13:12:44 +0530 (0:00:00.009)       0:00:00.009 ***** 
+ok: [localhost] => (item=traefik)
+ok: [localhost] => (item=metrics-server)
+ok: [localhost] => (item=argo)
+ok: [localhost] => (item=external-secrets)
+ok: [localhost] => (item=hashicorp)
+ok: [localhost] => (item=prometheus-community)
+ok: [localhost] => (item=grafana)
+ok: [localhost] => (item=grafana-community)
+
+TASK [platform : Platform releases] ********************************************
+Thursday 26 November 2026  13:12:47 +0530 (0:00:02.283)       0:00:02.293 ***** 
+[WARNING]: The default idempotency check can fail to report changes in certain cases. Install helm diff >= 3.4.1 for better results.
+[WARNING]: Deprecation warnings can be disabled by setting `deprecation_warnings=False` in ansible.cfg.
+[DEPRECATION WARNING]: The 'status.values' return value is deprecated and will be removed in version 8.0.0. Use 'status.release_values' instead. This feature will be removed from collection 'kubernetes.core' version 8.0.0.
+ok: [localhost] => (item=traefik)
+ok: [localhost] => (item=metrics-server)
+ok: [localhost] => (item=argocd)
+ok: [localhost] => (item=argo-rollouts)
+ok: [localhost] => (item=external-secrets)
+ok: [localhost] => (item=vault)
+
+TASK [vault : Wait for the Vault API behind Traefik] ***************************
+Thursday 26 November 2026  13:12:50 +0530 (0:00:02.895)       0:00:05.188 ***** 
+ok: [localhost]
+
+TASK [vault : Initialise] ******************************************************
+Thursday 26 November 2026  13:12:50 +0530 (0:00:00.640)       0:00:05.828 ***** 
+ok: [localhost]
+
+TASK [vault : Keep the unseal keys and root token on the control node only] ****
+Thursday 26 November 2026  13:12:51 +0530 (0:00:00.819)       0:00:06.647 ***** 
+changed: [localhost]
+
+TASK [vault : Read the unseal keys and root token] *****************************
+Thursday 26 November 2026  13:12:52 +0530 (0:00:00.527)       0:00:07.175 ***** 
+ok: [localhost]
+
+TASK [vault : Unseal with three of the five keys] ******************************
+Thursday 26 November 2026  13:12:52 +0530 (0:00:00.022)       0:00:07.198 ***** 
+ok: [localhost] => (item=(censored due to no_log))
+ok: [localhost] => (item=(censored due to no_log))
+ok: [localhost] => (item=(censored due to no_log))
+
+TASK [vault : List secret engines, auth methods and audit devices] *************
+Thursday 26 November 2026  13:12:52 +0530 (0:00:00.755)       0:00:07.953 ***** 
+ok: [localhost] => (item=mounts)
+ok: [localhost] => (item=auth)
+ok: [localhost] => (item=audit)
+
+TASK [vault : KV version 2 engine at secret/] **********************************
+Thursday 26 November 2026  13:12:53 +0530 (0:00:00.743)       0:00:08.697 ***** 
+changed: [localhost]
+
+TASK [vault : Kubernetes auth method] ******************************************
+Thursday 26 November 2026  13:12:53 +0530 (0:00:00.256)       0:00:08.953 ***** 
+changed: [localhost]
+
+TASK [vault : Audit log of every request] **************************************
+Thursday 26 November 2026  13:12:54 +0530 (0:00:00.366)       0:00:09.320 ***** 
+changed: [localhost]
+
+TASK [vault : Read current Kubernetes auth config] *****************************
+Thursday 26 November 2026  13:12:54 +0530 (0:00:00.280)       0:00:09.600 ***** 
+ok: [localhost]
+
+TASK [vault : Vault validates service-account tokens against this cluster] *****
+Thursday 26 November 2026  13:12:54 +0530 (0:00:00.265)       0:00:09.866 ***** 
+changed: [localhost]
+
+TASK [vault : Read policies] ***************************************************
+Thursday 26 November 2026  13:12:54 +0530 (0:00:00.259)       0:00:10.125 ***** 
+ok: [localhost] => (item=textstats-read)
+ok: [localhost] => (item=monitoring-read)
+
+TASK [vault : Least-privilege read policies, one per namespace] ****************
+Thursday 26 November 2026  13:12:55 +0530 (0:00:00.543)       0:00:10.669 ***** 
+changed: [localhost] => (item=textstats-read)
+changed: [localhost] => (item=monitoring-read)
+
+TASK [vault : Read Kubernetes auth roles] **************************************
+Thursday 26 November 2026  13:12:56 +0530 (0:00:00.517)       0:00:11.187 ***** 
+[WARNING]: Found variable using reserved name 'roles'.
+Origin: /Users/samir/Desktop/ensp461-devops-capstone/infra/ansible/roles/vault/tasks/main.yml:105:17
+
+103       loop: "{{ vault_roles }}"
+104       loop_control: {label: "{{ item.name }}"}
+105       register: roles
+                    ^ column 17
+
+ok: [localhost] => (item=textstats)
+ok: [localhost] => (item=monitoring)
+
+TASK [vault : Bind each policy to one service account in one namespace, 15-minute tokens] ***
+Thursday 26 November 2026  13:12:56 +0530 (0:00:00.544)       0:00:11.731 ***** 
+changed: [localhost] => (item=textstats)
+changed: [localhost] => (item=monitoring)
+
+TASK [vault : Check which credentials exist] ***********************************
+Thursday 26 November 2026  13:12:57 +0530 (0:00:00.534)       0:00:12.265 ***** 
+ok: [localhost] => (item=textstats/db)
+ok: [localhost] => (item=monitoring/grafana)
+
+TASK [vault : Generate missing credentials straight into Vault (40 random characters, never printed)] ***
+Thursday 26 November 2026  13:12:57 +0530 (0:00:00.684)       0:00:12.950 ***** 
+changed: [localhost] => (item=(censored due to no_log))
+changed: [localhost] => (item=(censored due to no_log))
+
+TASK [observability : Prometheus with Alertmanager, Loki and Alloy] ************
+Thursday 26 November 2026  13:12:58 +0530 (0:00:00.715)       0:00:13.665 ***** 
+changed: [localhost] => (item=prometheus)
+changed: [localhost] => (item=loki)
+changed: [localhost] => (item=alloy)
+
+TASK [observability : Alert receiver and Grafana's Vault-backed admin secret] ***
+Thursday 26 November 2026  13:14:59 +0530 (0:02:00.720)       0:02:14.385 ***** 
+changed: [localhost] => (item=alert-sink.yaml)
+changed: [localhost] => (item=monitoring-secrets.yaml)
+
+TASK [observability : Wait for External Secrets to copy the Grafana login from Vault] ***
+Thursday 26 November 2026  13:15:05 +0530 (0:00:06.397)       0:02:20.783 ***** 
+FAILED - RETRYING: [localhost]: observability : Wait for External Secrets to copy the Grafana login from Vault (29 retries left).
+ok: [localhost]
+
+TASK [observability : Dashboards from Git] *************************************
+Thursday 26 November 2026  13:15:08 +0530 (0:00:03.196)       0:02:23.980 ***** 
+changed: [localhost]
+
+TASK [observability : Grafana] *************************************************
+Thursday 26 November 2026  13:15:09 +0530 (0:00:00.432)       0:02:24.412 ***** 
+changed: [localhost]
+
+PLAY RECAP *********************************************************************
+localhost                  : ok=24   changed=12   unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+
+
+TASKS RECAP ********************************************************************
+Thursday 26 November 2026  13:15:32 +0530 (0:00:23.630)       0:02:48.042 ***** 
+=============================================================================== 
+observability : Prometheus with Alertmanager, Loki and Alloy ---------- 120.72s
+observability : Grafana ------------------------------------------------ 23.63s
+observability : Alert receiver and Grafana's Vault-backed admin secret --- 6.40s
+observability : Wait for External Secrets to copy the Grafana login from Vault --- 3.20s
+platform : Platform releases -------------------------------------------- 2.90s
+platform : Helm repositories -------------------------------------------- 2.28s
+vault : Initialise ------------------------------------------------------ 0.82s
+vault : Unseal with three of the five keys ------------------------------ 0.76s
+vault : List secret engines, auth methods and audit devices ------------- 0.74s
+vault : Generate missing credentials straight into Vault (40 random characters, never printed) --- 0.72s
+vault : Check which credentials exist ----------------------------------- 0.68s
+vault : Wait for the Vault API behind Traefik --------------------------- 0.64s
+vault : Read Kubernetes auth roles -------------------------------------- 0.54s
+vault : Read policies --------------------------------------------------- 0.54s
+vault : Bind each policy to one service account in one namespace, 15-minute tokens --- 0.53s
+vault : Keep the unseal keys and root token on the control node only ---- 0.53s
+vault : Least-privilege read policies, one per namespace ---------------- 0.52s
+observability : Dashboards from Git ------------------------------------- 0.43s
+vault : Kubernetes auth method ------------------------------------------ 0.37s
+vault : Audit log of every request -------------------------------------- 0.28s
+
+$ kubectl config current-context
+orbstack
+
+$ kubectl get nodes -o wide
+NAME       STATUS   ROLES                  AGE    VERSION        INTERNAL-IP     EXTERNAL-IP   OS-IMAGE   KERNEL-VERSION                                CONTAINER-RUNTIME
+orbstack   Ready    control-plane,master   207d   v1.36.5+orb1   192.168.139.2   <none>        OrbStack   7.2.12-orbstack-00394-gbecdd6130068 (arm64)   docker://29.8.2
+
+$ cd infra/ansible && ANSIBLE_FORCE_COLOR=0 ansible-playbook site.yml --tags gitops
+
+PLAY [Capstone platform] *******************************************************
+
+TASK [gitops : Argo CD Application for text-stats (from here on, Git is the only way to change it)] ***
+Thursday 26 November 2026  13:15:47 +0530 (0:00:00.017)       0:00:00.017 ***** 
+changed: [localhost]
+
+TASK [gitops : Wait until Argo CD reports the application Synced and Healthy] ***
+Thursday 26 November 2026  13:15:48 +0530 (0:00:00.624)       0:00:00.641 ***** 
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (59 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (58 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (57 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (56 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (55 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (54 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (53 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (52 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (51 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (50 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (49 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (48 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (47 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (46 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (45 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (44 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (43 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (42 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (41 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (40 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (39 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (38 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (37 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (36 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (35 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (34 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (33 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (32 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (31 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (30 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (29 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (28 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (27 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (26 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (25 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (24 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (23 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (22 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (21 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (20 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (19 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (18 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (17 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (16 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (15 retries left).
+FAILED - RETRYING: [localhost]: gitops : Wait until Argo CD reports the application Synced and Healthy (14 retries left).
+ok: [localhost]
+
+PLAY RECAP *********************************************************************
+localhost                  : ok=2    changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+
+
+TASKS RECAP ********************************************************************
+Thursday 26 November 2026  13:20:06 +0530 (0:04:17.723)       0:04:18.365 ***** 
+=============================================================================== 
+gitops : Wait until Argo CD reports the application Synced and Healthy - 257.72s
+gitops : Argo CD Application for text-stats (from here on, Git is the only way to change it) --- 0.62s
+
+$ cd infra/ansible && ANSIBLE_FORCE_COLOR=0 ansible-playbook site.yml
+
+PLAY [Capstone platform] *******************************************************
+
+TASK [platform : Helm repositories] ********************************************
+Thursday 26 November 2026  13:21:04 +0530 (0:00:00.011)       0:00:00.011 ***** 
+ok: [localhost] => (item=traefik)
+ok: [localhost] => (item=metrics-server)
+ok: [localhost] => (item=argo)
+ok: [localhost] => (item=external-secrets)
+ok: [localhost] => (item=hashicorp)
+ok: [localhost] => (item=prometheus-community)
+ok: [localhost] => (item=grafana)
+ok: [localhost] => (item=grafana-community)
+
+TASK [platform : Platform releases] ********************************************
+Thursday 26 November 2026  13:21:07 +0530 (0:00:02.240)       0:00:02.251 ***** 
+[WARNING]: The default idempotency check can fail to report changes in certain cases. Install helm diff >= 3.4.1 for better results.
+[WARNING]: Deprecation warnings can be disabled by setting `deprecation_warnings=False` in ansible.cfg.
+[DEPRECATION WARNING]: The 'status.values' return value is deprecated and will be removed in version 8.0.0. Use 'status.release_values' instead. This feature will be removed from collection 'kubernetes.core' version 8.0.0.
+ok: [localhost] => (item=traefik)
+ok: [localhost] => (item=metrics-server)
+ok: [localhost] => (item=argocd)
+ok: [localhost] => (item=argo-rollouts)
+ok: [localhost] => (item=external-secrets)
+ok: [localhost] => (item=vault)
+
+TASK [vault : Wait for the Vault API behind Traefik] ***************************
+Thursday 26 November 2026  13:21:10 +0530 (0:00:03.395)       0:00:05.646 ***** 
+ok: [localhost]
+
+TASK [vault : Initialise] ******************************************************
+Thursday 26 November 2026  13:21:11 +0530 (0:00:00.472)       0:00:06.119 ***** 
+skipping: [localhost]
+
+TASK [vault : Keep the unseal keys and root token on the control node only] ****
+Thursday 26 November 2026  13:21:11 +0530 (0:00:00.011)       0:00:06.130 ***** 
+skipping: [localhost]
+
+TASK [vault : Read the unseal keys and root token] *****************************
+Thursday 26 November 2026  13:21:11 +0530 (0:00:00.010)       0:00:06.141 ***** 
+ok: [localhost]
+
+TASK [vault : Unseal with three of the five keys] ******************************
+Thursday 26 November 2026  13:21:11 +0530 (0:00:00.027)       0:00:06.168 ***** 
+skipping: [localhost] => (item=(censored due to no_log)) 
+skipping: [localhost] => (item=(censored due to no_log)) 
+skipping: [localhost] => (item=(censored due to no_log)) 
+skipping: [localhost]
+
+TASK [vault : List secret engines, auth methods and audit devices] *************
+Thursday 26 November 2026  13:21:11 +0530 (0:00:00.017)       0:00:06.186 ***** 
+ok: [localhost] => (item=mounts)
+ok: [localhost] => (item=auth)
+ok: [localhost] => (item=audit)
+
+TASK [vault : KV version 2 engine at secret/] **********************************
+Thursday 26 November 2026  13:21:12 +0530 (0:00:00.946)       0:00:07.133 ***** 
+skipping: [localhost]
+
+TASK [vault : Kubernetes auth method] ******************************************
+Thursday 26 November 2026  13:21:12 +0530 (0:00:00.008)       0:00:07.141 ***** 
+skipping: [localhost]
+
+TASK [vault : Audit log of every request] **************************************
+Thursday 26 November 2026  13:21:12 +0530 (0:00:00.007)       0:00:07.149 ***** 
+skipping: [localhost]
+
+TASK [vault : Read current Kubernetes auth config] *****************************
+Thursday 26 November 2026  13:21:12 +0530 (0:00:00.007)       0:00:07.156 ***** 
+ok: [localhost]
+
+TASK [vault : Vault validates service-account tokens against this cluster] *****
+Thursday 26 November 2026  13:21:12 +0530 (0:00:00.343)       0:00:07.500 ***** 
+skipping: [localhost]
+
+TASK [vault : Read policies] ***************************************************
+Thursday 26 November 2026  13:21:12 +0530 (0:00:00.010)       0:00:07.510 ***** 
+ok: [localhost] => (item=textstats-read)
+ok: [localhost] => (item=monitoring-read)
+
+TASK [vault : Least-privilege read policies, one per namespace] ****************
+Thursday 26 November 2026  13:21:13 +0530 (0:00:00.633)       0:00:08.144 ***** 
+skipping: [localhost] => (item=textstats-read) 
+skipping: [localhost] => (item=monitoring-read) 
+skipping: [localhost]
+
+TASK [vault : Read Kubernetes auth roles] **************************************
+Thursday 26 November 2026  13:21:13 +0530 (0:00:00.013)       0:00:08.157 ***** 
+[WARNING]: Found variable using reserved name 'roles'.
+Origin: /Users/samir/Desktop/ensp461-devops-capstone/infra/ansible/roles/vault/tasks/main.yml:105:17
+
+103       loop: "{{ vault_roles }}"
+104       loop_control: {label: "{{ item.name }}"}
+105       register: roles
+                    ^ column 17
+
+ok: [localhost] => (item=textstats)
+ok: [localhost] => (item=monitoring)
+
+TASK [vault : Bind each policy to one service account in one namespace, 15-minute tokens] ***
+Thursday 26 November 2026  13:21:13 +0530 (0:00:00.633)       0:00:08.791 ***** 
+skipping: [localhost] => (item=textstats) 
+skipping: [localhost] => (item=monitoring) 
+skipping: [localhost]
+
+TASK [vault : Check which credentials exist] ***********************************
+Thursday 26 November 2026  13:21:13 +0530 (0:00:00.013)       0:00:08.805 ***** 
+ok: [localhost] => (item=textstats/db)
+ok: [localhost] => (item=monitoring/grafana)
+
+TASK [vault : Generate missing credentials straight into Vault (40 random characters, never printed)] ***
+Thursday 26 November 2026  13:21:14 +0530 (0:00:00.599)       0:00:09.405 ***** 
+skipping: [localhost] => (item=(censored due to no_log)) 
+skipping: [localhost] => (item=(censored due to no_log)) 
+skipping: [localhost]
+
+TASK [observability : Prometheus with Alertmanager, Loki and Alloy] ************
+Thursday 26 November 2026  13:21:14 +0530 (0:00:00.012)       0:00:09.418 ***** 
+ok: [localhost] => (item=prometheus)
+ok: [localhost] => (item=loki)
+ok: [localhost] => (item=alloy)
+
+TASK [observability : Alert receiver and Grafana's Vault-backed admin secret] ***
+Thursday 26 November 2026  13:21:16 +0530 (0:00:01.758)       0:00:11.176 ***** 
+ok: [localhost] => (item=alert-sink.yaml)
+ok: [localhost] => (item=monitoring-secrets.yaml)
+
+TASK [observability : Wait for External Secrets to copy the Grafana login from Vault] ***
+Thursday 26 November 2026  13:21:17 +0530 (0:00:01.121)       0:00:12.297 ***** 
+ok: [localhost]
+
+TASK [observability : Dashboards from Git] *************************************
+Thursday 26 November 2026  13:21:17 +0530 (0:00:00.590)       0:00:12.888 ***** 
+ok: [localhost]
+
+TASK [observability : Grafana] *************************************************
+Thursday 26 November 2026  13:21:18 +0530 (0:00:00.475)       0:00:13.363 ***** 
+ok: [localhost]
+
+TASK [gitops : Argo CD Application for text-stats (from here on, Git is the only way to change it)] ***
+Thursday 26 November 2026  13:21:18 +0530 (0:00:00.563)       0:00:13.927 ***** 
+ok: [localhost]
+
+TASK [gitops : Wait until Argo CD reports the application Synced and Healthy] ***
+Thursday 26 November 2026  13:21:19 +0530 (0:00:00.565)       0:00:14.493 ***** 
+ok: [localhost]
+
+PLAY RECAP *********************************************************************
+localhost                  : ok=16   changed=0    unreachable=0    failed=0    skipped=10   rescued=0    ignored=0   
+
+
+TASKS RECAP ********************************************************************
+Thursday 26 November 2026  13:21:20 +0530 (0:00:00.676)       0:00:15.169 ***** 
+=============================================================================== 
+platform : Platform releases -------------------------------------------- 3.40s
+platform : Helm repositories -------------------------------------------- 2.24s
+observability : Prometheus with Alertmanager, Loki and Alloy ------------ 1.76s
+observability : Alert receiver and Grafana's Vault-backed admin secret --- 1.12s
+vault : List secret engines, auth methods and audit devices ------------- 0.95s
+gitops : Wait until Argo CD reports the application Synced and Healthy --- 0.68s
+vault : Read policies --------------------------------------------------- 0.63s
+vault : Read Kubernetes auth roles -------------------------------------- 0.63s
+vault : Check which credentials exist ----------------------------------- 0.60s
+observability : Wait for External Secrets to copy the Grafana login from Vault --- 0.59s
+gitops : Argo CD Application for text-stats (from here on, Git is the only way to change it) --- 0.57s
+observability : Grafana ------------------------------------------------- 0.56s
+observability : Dashboards from Git ------------------------------------- 0.48s
+vault : Wait for the Vault API behind Traefik --------------------------- 0.47s
+vault : Read current Kubernetes auth config ----------------------------- 0.34s
+vault : Read the unseal keys and root token ----------------------------- 0.03s
+vault : Unseal with three of the five keys ------------------------------ 0.02s
+vault : Bind each policy to one service account in one namespace, 15-minute tokens --- 0.01s
+vault : Least-privilege read policies, one per namespace ---------------- 0.01s
+vault : Generate missing credentials straight into Vault (40 random characters, never printed) --- 0.01s
+
+# after an OrbStack restart (memory raised to 10 GB): Vault comes back sealed, the vault role unseals it
+$ cd infra/ansible && ANSIBLE_FORCE_COLOR=0 ansible-playbook site.yml --tags vault
+
+PLAY [Capstone platform] *******************************************************
+
+TASK [vault : Wait for the Vault API behind Traefik] ***************************
+Thursday 26 November 2026  13:44:23 +0530 (0:00:00.013)       0:00:00.013 ***** 
+ok: [localhost]
+
+TASK [vault : Initialise] ******************************************************
+Thursday 26 November 2026  13:44:23 +0530 (0:00:00.396)       0:00:00.409 ***** 
+skipping: [localhost]
+
+TASK [vault : Keep the unseal keys and root token on the control node only] ****
+Thursday 26 November 2026  13:44:23 +0530 (0:00:00.010)       0:00:00.420 ***** 
+skipping: [localhost]
+
+TASK [vault : Read the unseal keys and root token] *****************************
+Thursday 26 November 2026  13:44:23 +0530 (0:00:00.009)       0:00:00.430 ***** 
+ok: [localhost]
+
+TASK [vault : Unseal with three of the five keys] ******************************
+Thursday 26 November 2026  13:44:23 +0530 (0:00:00.027)       0:00:00.458 ***** 
+ok: [localhost] => (item=(censored due to no_log))
+ok: [localhost] => (item=(censored due to no_log))
+ok: [localhost] => (item=(censored due to no_log))
+
+TASK [vault : List secret engines, auth methods and audit devices] *************
+Thursday 26 November 2026  13:44:24 +0530 (0:00:00.991)       0:00:01.449 ***** 
+ok: [localhost] => (item=mounts)
+ok: [localhost] => (item=auth)
+ok: [localhost] => (item=audit)
+
+TASK [vault : KV version 2 engine at secret/] **********************************
+Thursday 26 November 2026  13:44:25 +0530 (0:00:00.833)       0:00:02.283 ***** 
+skipping: [localhost]
+
+TASK [vault : Kubernetes auth method] ******************************************
+Thursday 26 November 2026  13:44:25 +0530 (0:00:00.010)       0:00:02.293 ***** 
+skipping: [localhost]
+
+TASK [vault : Audit log of every request] **************************************
+Thursday 26 November 2026  13:44:25 +0530 (0:00:00.009)       0:00:02.303 ***** 
+skipping: [localhost]
+
+TASK [vault : Read current Kubernetes auth config] *****************************
+Thursday 26 November 2026  13:44:25 +0530 (0:00:00.009)       0:00:02.312 ***** 
+ok: [localhost]
+
+TASK [vault : Vault validates service-account tokens against this cluster] *****
+Thursday 26 November 2026  13:44:25 +0530 (0:00:00.295)       0:00:02.608 ***** 
+skipping: [localhost]
+
+TASK [vault : Read policies] ***************************************************
+Thursday 26 November 2026  13:44:25 +0530 (0:00:00.009)       0:00:02.618 ***** 
+ok: [localhost] => (item=textstats-read)
+ok: [localhost] => (item=monitoring-read)
+
+TASK [vault : Least-privilege read policies, one per namespace] ****************
+Thursday 26 November 2026  13:44:26 +0530 (0:00:00.541)       0:00:03.160 ***** 
+skipping: [localhost] => (item=textstats-read) 
+skipping: [localhost] => (item=monitoring-read) 
+skipping: [localhost]
+
+TASK [vault : Read Kubernetes auth roles] **************************************
+Thursday 26 November 2026  13:44:26 +0530 (0:00:00.011)       0:00:03.172 ***** 
+[WARNING]: Found variable using reserved name 'roles'.
+Origin: /Users/samir/Desktop/ensp461-devops-capstone/infra/ansible/roles/vault/tasks/main.yml:105:17
+
+103       loop: "{{ vault_roles }}"
+104       loop_control: {label: "{{ item.name }}"}
+105       register: roles
+                    ^ column 17
+
+ok: [localhost] => (item=textstats)
+ok: [localhost] => (item=monitoring)
+
+TASK [vault : Bind each policy to one service account in one namespace, 15-minute tokens] ***
+Thursday 26 November 2026  13:44:26 +0530 (0:00:00.511)       0:00:03.684 ***** 
+skipping: [localhost] => (item=textstats) 
+skipping: [localhost] => (item=monitoring) 
+skipping: [localhost]
+
+TASK [vault : Check which credentials exist] ***********************************
+Thursday 26 November 2026  13:44:26 +0530 (0:00:00.012)       0:00:03.696 ***** 
+ok: [localhost] => (item=textstats/db)
+ok: [localhost] => (item=monitoring/grafana)
+
+TASK [vault : Generate missing credentials straight into Vault (40 random characters, never printed)] ***
+Thursday 26 November 2026  13:44:27 +0530 (0:00:00.549)       0:00:04.246 ***** 
+skipping: [localhost] => (item=(censored due to no_log)) 
+skipping: [localhost] => (item=(censored due to no_log)) 
+skipping: [localhost]
+
+PLAY RECAP *********************************************************************
+localhost                  : ok=8    changed=0    unreachable=0    failed=0    skipped=9    rescued=0    ignored=0   
+
+
+TASKS RECAP ********************************************************************
+Thursday 26 November 2026  13:44:27 +0530 (0:00:00.016)       0:00:04.262 ***** 
+=============================================================================== 
+vault : Unseal with three of the five keys ------------------------------ 0.99s
+vault : List secret engines, auth methods and audit devices ------------- 0.83s
+vault : Check which credentials exist ----------------------------------- 0.55s
+vault : Read policies --------------------------------------------------- 0.54s
+vault : Read Kubernetes auth roles -------------------------------------- 0.51s
+vault : Wait for the Vault API behind Traefik --------------------------- 0.40s
+vault : Read current Kubernetes auth config ----------------------------- 0.30s
+vault : Read the unseal keys and root token ----------------------------- 0.03s
+vault : Generate missing credentials straight into Vault (40 random characters, never printed) --- 0.02s
+vault : Bind each policy to one service account in one namespace, 15-minute tokens --- 0.01s
+vault : Least-privilege read policies, one per namespace ---------------- 0.01s
+vault : Initialise ------------------------------------------------------ 0.01s
+vault : KV version 2 engine at secret/ ---------------------------------- 0.01s
+vault : Keep the unseal keys and root token on the control node only ---- 0.01s
+vault : Vault validates service-account tokens against this cluster ----- 0.01s
+vault : Audit log of every request -------------------------------------- 0.01s
+vault : Kubernetes auth method ------------------------------------------ 0.01s
+

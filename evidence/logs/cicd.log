@@ -1,0 +1,76 @@
+$ gh run list --workflow ci-cd.yml --limit 20 --json headSha,conclusion,displayTitle,createdAt -q '.[] | "\(.createdAt[11:19])  \(.headSha[:7])  \(.conclusion | .[:9] + (" " * (9 - length)))  \(.displayTitle[:70])"'
+09:04:33  7b3bdfd  success    Backups: wait for the database to accept the new pod before pg_dump
+08:09:22  d53b2e3  success    Reject request bodies over 100 KB with 413 (release 1.2.0)
+08:08:43  58b57a1  success    Revert "Faulty release drill: ship a config that fails 25% of /stats …
+08:00:56  aeca08a  success    Faulty release drill: ship a config that fails 25% of /stats requests
+07:51:50  8f8a337  success    Fix sentence count for text after the last sentence end
+07:51:38  a31e2a8  cancelled  Count sentences in /stats (release 1.1.0)
+07:51:00  04ffbb3  success    Use a port for the Loki port-forward that no other lab uses
+07:45:48  7f939ed  success    Reach Vault through Traefik on 127.0.0.1 with a Host header
+07:39:27  a7a2197  success    Never overwrite a published release tag
+07:36:14  55991a3  success    Remove pip from the runtime virtualenv: its vendored urllib3 and msgp…
+07:30:38  b49fb47  failure    Fix trivy findings: read-only root filesystems and non-root pod secur…
+07:26:54  a5d6cfe  failure    Add text-stats GitOps manifests: canary Rollout, Postgres, backups, H…
+
+$ gh run view 45775846683 --json displayTitle,headSha -q '"\(.headSha[:7]) \(.displayTitle)"'; jobs_of 45775846683
+b49fb47 Fix trivy findings: read-only root filesystems and non-root pod secur…
+  Lint and unit tests: success
+  Security scans (secrets, SAST, dependencies, IaC): success
+  Integration tests (PostgreSQL): success
+  Build, scan and smoke-test the image: failure
+  Publish to GHCR: skipped
+  Release through GitOps: skipped
+
+$ gh run view 45775846683 --log-failed | cut -f3- | sed -E 's/^[^ ]+ //' | grep -E '^(KSV-|Total: )|│ +[1-9] +│|^│ (msgpack|urllib3|setuptools) ' | head -16
+│ Python                                                                        │ python-pkg │        5        │    -    │
+Total: 5 (HIGH: 5, CRITICAL: 0)
+│ msgpack    │ CVE-2026-114613     │ HIGH     │ fixed  │ 1.1.2             │ 1.2.3         │ msgpack: msgpack: Denial of Service via memory leak during │
+│ setuptools │ CVE-2025-47273      │          │        │ 70.3.0            │ 78.1.1        │ setuptools: Path Traversal Vulnerability in setuptools     │
+│ urllib3    │ CVE-2026-97687      │          │        │ 2.7.0             │ 2.8.0         │ urllib3: urllib3: Traffic interception via HTTPS proxy TLS │
+
+$ gh run view 45775381064 --json displayTitle,headSha -q '"\(.headSha[:7]) \(.displayTitle)"'; jobs_of 45775381064
+a5d6cfe Add text-stats GitOps manifests: canary Rollout, Postgres, backups, H…
+  Security scans (secrets, SAST, dependencies, IaC): failure
+  Lint and unit tests: success
+  Integration tests (PostgreSQL): success
+  Publish to GHCR: skipped
+  Build, scan and smoke-test the image: skipped
+  Release through GitOps: skipped
+
+$ gh run view 45775381064 --log-failed | cut -f3- | sed -E 's/^[^ ]+ //' | grep -E '^(KSV-|Total: )|│ +[1-9] +│|^│ (msgpack|urllib3|setuptools) ' | head -16
+│ deploy/k8s/backup.yaml                  │ kubernetes │         1         │
+│ deploy/k8s/postgres.yaml                │ kubernetes │         1         │
+│ deploy/k8s/traffic.yaml                 │ kubernetes │         1         │
+│ deploy/platform/alert-sink.yaml         │ kubernetes │         1         │
+KSV-0014 (HIGH): Container 'backup' of CronJob 'postgres-backup' should set 'securityContext.readOnlyRootFilesystem' to true
+KSV-0014 (HIGH): Container 'postgres' of StatefulSet 'postgres' should set 'securityContext.readOnlyRootFilesystem' to true
+KSV-0118 (HIGH): deployment traffic in default namespace is using the default security context, which allows root privileges
+KSV-0118 (HIGH): deployment alert-sink in monitoring namespace is using the default security context, which allows root privileges
+
+$ gh run view 45778488727 --json displayTitle,headSha -q '"\(.headSha[:7]) \(.displayTitle)"'; jobs_of 45778488727
+8f8a337 Fix sentence count for text after the last sentence end
+  Lint and unit tests: success
+  Security scans (secrets, SAST, dependencies, IaC): success
+  Integration tests (PostgreSQL): success
+  Build, scan and smoke-test the image: success
+  Publish to GHCR: success
+  Release through GitOps: success
+
+$ gh run view 45778488727 --log | grep -E '^(Publish to GHCR|Release through GitOps)' | cut -f1,3- | sed -E 's/\t[^ ]+ / /' | grep -vE '\[36;1m|##\[' | grep -E 'digest:|already published|release: text-stats|main -> main'
+Release through GitOps [main bc56ecf] release: text-stats 1.1.0 (8f8a337)
+Release through GitOps    8f8a337..bc56ecf  main -> main
+
+$ git log --format='%h %an  %s' -12 origin/main
+7b3bdfd Samir  Backups: wait for the database to accept the new pod before pg_dump
+5f5e774 github-actions[bot]  release: text-stats 1.2.0 (d53b2e3)
+d53b2e3 Samir  Reject request bodies over 100 KB with 413 (release 1.2.0)
+87b2fed Samir  Lab scripts: wait for the real end of a rollout, browser host mapping, CI evidence and report builder
+ee9ac0c Samir  Probes: readiness on /healthz so a database outage stays visible, longer timeouts under load
+58b57a1 Samir  Revert "Faulty release drill: ship a config that fails 25% of /stats requests"
+aeca08a Samir  Faulty release drill: ship a config that fails 25% of /stats requests
+bc56ecf github-actions[bot]  release: text-stats 1.1.0 (8f8a337)
+8f8a337 Samir  Fix sentence count for text after the last sentence end
+a31e2a8 Samir  Count sentences in /stats (release 1.1.0)
+04ffbb3 Samir  Use a port for the Loki port-forward that no other lab uses
+7f939ed Samir  Reach Vault through Traefik on 127.0.0.1 with a Host header
+

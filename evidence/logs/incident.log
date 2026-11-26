@@ -1,0 +1,67 @@
+$ echo "error ratio before:"; prom textstats:error_ratio:rate5m
+error ratio before:
+ 0
+
+$ kubectl -n argocd patch application textstats --type merge -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":false}}}}'
+application.argoproj.io/textstats patched
+
+$ kubectl -n textstats scale statefulset postgres --replicas=0 && date -u +'database stopped at %H:%M:%S'
+statefulset.apps/postgres scaled
+database stopped at 08:43:25
+
+$ until [ "$(curl -s $PROM/api/v1/alerts | jq -r "[.data.alerts[] | select(.labels.alertname==\"TextstatsHighErrorRate\" and .state==\"firing\")] | length")" -gt 0 ]; do sleep 5; done; date -u +"TextstatsHighErrorRate firing at %H:%M:%S"
+TextstatsHighErrorRate firing at 08:47:25
+
+$ curl -s http://prometheus.k8s.orb.local/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname)  severity=\(.labels.severity)  state=\(.state)  since=\(.activeAt[11:19])  \(.annotations.summary)"'
+TextstatsHighErrorRate  severity=critical  state=firing  since=08:45:24  text-stats 5xx ratio is 24.81% (threshold 5%)
+TextstatsHighLatency  severity=warning  state=pending  since=08:45:24  text-stats p95 latency is 2.5s (threshold 250ms)
+
+$ until kubectl -n monitoring logs deploy/alert-sink | grep -q "\"firing\", \"alertname\": \"TextstatsHighErrorRate\""; do sleep 3; done; kubectl -n monitoring logs deploy/alert-sink
+{"ts": "08:14:54", "receiver": "chat", "status": "firing", "alertname": "TextstatsHighLatency", "severity": "warning", "summary": "text-stats p95 latency is 478.3ms (threshold 250ms)"}
+{"ts": "08:16:46", "receiver": "chat", "status": "resolved", "alertname": "TextstatsHighLatency", "severity": "warning", "summary": "text-stats p95 latency is 283.9ms (threshold 250ms)"}
+{"ts": "08:26:46", "receiver": "chat", "status": "resolved", "alertname": "TextstatsPodRestarting", "severity": "warning", "summary": "postgres-0 restarted 2.036 times in 15 minutes"}
+{"ts": "08:35:24", "receiver": "chat", "status": "firing", "alertname": "TextstatsHighLatency", "severity": "warning", "summary": "text-stats p95 latency is 2.5s (threshold 250ms)"}
+{"ts": "08:41:44", "receiver": "pager", "status": "resolved", "alertname": "TextstatsHighErrorRate", "severity": "critical", "summary": "text-stats 5xx ratio is 5.005% (threshold 5%)"}
+{"ts": "08:45:24", "receiver": "chat", "status": "resolved", "alertname": "TextstatsHighLatency", "severity": "warning", "summary": "text-stats p95 latency is 1.002s (threshold 250ms)"}
+{"ts": "08:47:34", "receiver": "pager", "status": "firing", "alertname": "TextstatsHighErrorRate", "severity": "critical", "summary": "text-stats 5xx ratio is 24.81% (threshold 5%)"}
+
+$ echo "LogQL: {namespace=\"textstats\", app=\"text-stats\", level=\"error\"} | json | msg=\"database write failed\""; logq "{namespace=\"textstats\", app=\"text-stats\", level=\"error\"} | json | msg=\"database write failed\"" 5m 4
+LogQL: {namespace="textstats", app="text-stats", level="error"} | json | msg="database write failed"
+text-stats-7cbcffb8d5-n5rm5 error  {"ts": "2026-11-26T08:48:04.939Z", "level": "error", "logger": "textstats", "msg": "database write failed", "release": "1.2.0", "request_id": "c0b3c6740fbf4adc", "error": "OperationalError"}
+
+text-stats-7cbcffb8d5-n5rm5 error  {"ts": "2026-11-26T08:48:03.853Z", "level": "error", "logger": "textstats", "msg": "database write failed", "release": "1.2.0", "request_id": "300c67cef48d4933", "error": "OperationalError"}
+
+
+$ echo "LogQL: sum by (level) (count_over_time({namespace=\"textstats\", app=\"text-stats\"}[5m]))"; curl -s -G $LOKI/loki/api/v1/query --data-urlencode "query=sum by (level) (count_over_time({namespace=\"textstats\", app=\"text-stats\"}[5m]))" | jq -r ".data.result[] | \"\(.metric.level)  \(.value[1])\""
+LogQL: sum by (level) (count_over_time({namespace="textstats", app="text-stats"}[5m]))
+null  3
+error  800
+info  292
+
+$ kubectl -n argocd patch application textstats --type merge -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":true}}}}' && date -u +'self-heal on at %H:%M:%S'
+application.argoproj.io/textstats patched
+self-heal on at 08:48:07
+
+$ until [ "$(kubectl -n textstats get statefulset postgres -o jsonpath="{.status.readyReplicas}")" = 1 ]; do sleep 2; done; date -u +"database ready again at %H:%M:%S (restored by Argo CD)"
+database ready again at 08:48:15 (restored by Argo CD)
+
+$ until kubectl -n monitoring logs deploy/alert-sink | grep -q "\"resolved\", \"alertname\": \"TextstatsHighErrorRate\""; do sleep 5; done; kubectl -n monitoring logs deploy/alert-sink | tail -3
+{"ts": "08:41:44", "receiver": "pager", "status": "resolved", "alertname": "TextstatsHighErrorRate", "severity": "critical", "summary": "text-stats 5xx ratio is 5.005% (threshold 5%)"}
+{"ts": "08:45:24", "receiver": "chat", "status": "resolved", "alertname": "TextstatsHighLatency", "severity": "warning", "summary": "text-stats p95 latency is 1.002s (threshold 250ms)"}
+{"ts": "08:47:34", "receiver": "pager", "status": "firing", "alertname": "TextstatsHighErrorRate", "severity": "critical", "summary": "text-stats 5xx ratio is 24.81% (threshold 5%)"}
+
+$ echo "5xx/s now:"; prom "sum(rate(textstats_http_requests_total{route=\"/stats\",status=~\"5..\"}[1m])) or vector(0)"
+5xx/s now:
+ 1.3599816007359706
+
+# the wait above matched the resolved message of an earlier incident (08:41); waiting for this drill's own resolution:
+$ until kubectl -n monitoring logs deploy/alert-sink | sed -n "/\"firing\", \"alertname\": \"TextstatsHighErrorRate\"/,\$p" | tail -n +2 | grep -q "\"resolved\", \"alertname\": \"TextstatsHighErrorRate\""; do sleep 5; done; kubectl -n monitoring logs deploy/alert-sink | tail -2
+{"ts": "08:50:54", "receiver": "chat", "status": "firing", "alertname": "TextstatsHighLatency", "severity": "warning", "summary": "text-stats p95 latency is 2.255s (threshold 250ms)"}
+{"ts": "08:52:34", "receiver": "pager", "status": "resolved", "alertname": "TextstatsHighErrorRate", "severity": "critical", "summary": "text-stats 5xx ratio is 5.308% (threshold 5%)"}
+
+$ echo "5xx/s now:"; prom "sum(rate(textstats_http_requests_total{route=\"/stats\",status=~\"5..\"}[1m])) or vector(0)"; echo "error ratio (5m):"; prom textstats:error_ratio:rate5m
+5xx/s now:
+ 0
+error ratio (5m):
+ 0.012209725472849082
+

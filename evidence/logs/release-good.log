@@ -1,0 +1,97 @@
+$ git log -3 --format='%h %an %ad %s' --date=format:%H:%M:%S origin/main
+5f5e774 github-actions[bot] 08:13:33 release: text-stats 1.2.0 (d53b2e3)
+d53b2e3 Samir 13:39:17 Reject request bodies over 100 KB with 413 (release 1.2.0)
+87b2fed Samir 13:39:17 Lab scripts: wait for the real end of a rollout, browser host mapping, CI evidence and report builder
+
+$ git show --format= origin/main -- deploy/k8s
+diff --git a/deploy/k8s/kustomization.yaml b/deploy/k8s/kustomization.yaml
+index e7e2d06..b3a9998 100644
+--- a/deploy/k8s/kustomization.yaml
++++ b/deploy/k8s/kustomization.yaml
+@@ -13,4 +13,4 @@ resources:
+   - traffic.yaml
+ images:
+   - name: ghcr.io/ksamirdev/ensp461-devops-capstone
+-    newTag: "1.1.0"
++    newTag: "1.2.0"
+
+$ until [ "$(kubectl -n argocd get application textstats -o jsonpath='{.status.sync.revision}')" = 5f5e774cc97a17a124fcfa79da4da7f688da109d ]; do sleep 2; done; echo "Argo CD synced 5f5e774 at $(date -u +%H:%M:%S) without a manual sync"
+Argo CD synced 5f5e774 at 08:14:54 without a manual sync
+
+$ last=''; while :; do s=$(rollout_state); [ "$s" != "$last" ] && echo "$(date -u +%H:%M:%S) $s" && last=$s
+  stable=$(kubectl -n textstats get rollout text-stats -o jsonpath='{.status.stableRS}')
+  case "$s" in *phase=Degraded*) break;; *phase=Healthy*) [ "$stable" != 6898f86579 ] && break;; esac; sleep 2; done; true
+08:14:54 step=2 phase=Progressing pods=4 new_version_pods=1 canary_weight=10 more replicas need to be updated
+08:15:26 step=4 phase=Paused pods=4 new_version_pods=1 canary_weight=30 CanaryPauseStep
+08:15:56 step=5 phase=Progressing pods=4 new_version_pods=1 canary_weight=30 more replicas need to be updated
+08:16:36 step=6 phase=Progressing pods=5 new_version_pods=2 canary_weight=30 more replicas need to be updated
+08:16:38 step=7 phase=Paused pods=5 new_version_pods=2 canary_weight=60 CanaryPauseStep
+08:17:08 step=8 phase=Progressing pods=5 new_version_pods=2 canary_weight=60 more replicas need to be updated
+08:17:50 step=9 phase=Healthy pods=6 new_version_pods=3 canary_weight=0 
+
+$ kubectl argo rollouts get rollout text-stats -n textstats --no-color
+Name:            text-stats
+Namespace:       textstats
+Status:          ✔ Healthy
+Strategy:        Canary
+  Step:          9/9
+  SetWeight:     100
+  ActualWeight:  100
+Images:          ghcr.io/ksamirdev/ensp461-devops-capstone:1.1.0
+                 ghcr.io/ksamirdev/ensp461-devops-capstone:1.2.0 (stable)
+Replicas:
+  Desired:       3
+  Current:       6
+  Updated:       3
+  Ready:         6
+  Available:     6
+
+NAME                                    KIND         STATUS        AGE    INFO
+⟳ text-stats                            Rollout      ✔ Healthy     32m    
+├──# revision:6                                                           
+│  ├──⧉ text-stats-7cbcffb8d5           ReplicaSet   ✔ Healthy     3m52s  stable
+│  │  ├──□ text-stats-7cbcffb8d5-h7rd2  Pod          ✔ Running     3m52s  ready:1/1
+│  │  ├──□ text-stats-7cbcffb8d5-lhx2d  Pod          ✔ Running     86s    ready:1/1
+│  │  └──□ text-stats-7cbcffb8d5-98k45  Pod          ✔ Running     13s    ready:1/1
+│  ├──α text-stats-7cbcffb8d5-6-2       AnalysisRun  ✔ Successful  3m16s  ✔ 6
+│  ├──α text-stats-7cbcffb8d5-6-5       AnalysisRun  ✔ Successful  2m6s   ✔ 6
+│  └──α text-stats-7cbcffb8d5-6-8       AnalysisRun  ✔ Successful  53s    ✔ 6
+├──# revision:5                                                           
+│  ├──⧉ text-stats-7bd9966784           ReplicaSet   • ScaledDown  5m42s  
+│  └──α text-stats-7bd9966784-5-2       AnalysisRun  ✔ Successful  4m3s   ⚠ 4
+├──# revision:4                                                           
+│  └──⧉ text-stats-6898f86579           ReplicaSet   ✔ Healthy     21m    delay:17s
+│     ├──□ text-stats-6898f86579-8wb26  Pod          ✔ Running     21m    ready:1/1,restarts:1
+│     ├──□ text-stats-6898f86579-tbwk7  Pod          ✔ Running     18m    ready:1/1,restarts:1
+│     └──□ text-stats-6898f86579-27ws2  Pod          ✔ Running     17m    ready:1/1,restarts:1
+├──# revision:3                                                           
+│  ├──⧉ text-stats-656fd57795           ReplicaSet   • ScaledDown  14m    delay:passed
+│  └──α text-stats-656fd57795-3-2       AnalysisRun  ✖ Failed      13m    ✖ 4
+└──# revision:2                                                           
+   └──α text-stats-6898f86579-2-8       AnalysisRun  ✔ Successful  18m    ✔ 6
+
+$ kubectl -n textstats get analysisrun --sort-by=.metadata.creationTimestamp -o json | jq -r '.items[-3:][] | .metadata.name as $n | .status.metricResults[] | "\($n)  \(.name)  phase=\(.phase)  values=\([.measurements[].value] | join(" "))"'
+text-stats-7cbcffb8d5-6-2  p95-latency-seconds  phase=Successful  values=[0.021810599848744165] [0.023243726061694583] [0.024282608695652175]
+text-stats-7cbcffb8d5-6-2  error-rate  phase=Successful  values=[0] [0] [0]
+text-stats-7cbcffb8d5-6-5  error-rate  phase=Successful  values=[0] [0] [0]
+text-stats-7cbcffb8d5-6-5  p95-latency-seconds  phase=Successful  values=[0.029107142857142856] [0.024500000000000008] [0.024505681818181815]
+text-stats-7cbcffb8d5-6-8  p95-latency-seconds  phase=Successful  values=[0.023470372285418817] [0.02318840315196712] [0.023278901734104053]
+text-stats-7cbcffb8d5-6-8  error-rate  phase=Successful  values=[0] [0] [0]
+
+$ kubectl -n textstats get traefikservice text-stats -o jsonpath='{range .spec.weighted.services[*]}{.name}={.weight} {end}'
+text-stats-stable=100 text-stats-canary=0 
+$ echo "requests/s by pod-template hash:"; prom "sum by (rollouts_pod_template_hash) (rate(textstats_http_requests_total{route=\"/stats\"}[1m]))"
+requests/s by pod-template hash:
+rollouts_pod_template_hash=6898f86579 5.639884806911585
+rollouts_pod_template_hash=7cbcffb8d5 10.019800007999681
+
+$ echo "5xx share by pod-template hash (2m):"; prom "sum by (rollouts_pod_template_hash) (rate(textstats_http_requests_total{route=\"/stats\",status=~\"5..\"}[2m])) / sum by (rollouts_pod_template_hash) (rate(textstats_http_requests_total{route=\"/stats\"}[2m]))"
+5xx share by pod-template hash (2m):
+
+$ curl -s -H 'Host: textstats.k8s.orb.local' http://localhost/
+{"pod":"text-stats-7cbcffb8d5-98k45","release":"1.2.0","service":"text-stats"}
+
+$ kubectl -n argocd get application textstats
+NAME        SYNC STATUS   HEALTH STATUS
+textstats   Synced        Healthy
+

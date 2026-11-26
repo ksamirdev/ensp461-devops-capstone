@@ -1,0 +1,108 @@
+$ kubectl -n textstats get pods -l app=text-stats -o wide
+NAME                          READY   STATUS    RESTARTS        AGE   IP                NODE       NOMINATED NODE   READINESS GATES
+text-stats-6898f86579-27ws2   1/1     Running   1 (4m43s ago)   17m   192.168.194.108   orbstack   <none>           <none>
+text-stats-6898f86579-8wb26   1/1     Running   1 (4m43s ago)   21m   192.168.194.106   orbstack   <none>           <none>
+text-stats-6898f86579-tbwk7   1/1     Running   1 (4m43s ago)   18m   192.168.194.107   orbstack   <none>           <none>
+text-stats-7cbcffb8d5-98k45   1/1     Running   0               21s   192.168.194.11    orbstack   <none>           <none>
+text-stats-7cbcffb8d5-h7rd2   1/1     Running   0               4m    192.168.194.4     orbstack   <none>           <none>
+text-stats-7cbcffb8d5-jtvkc   0/1     Running   0               2s    192.168.194.12    orbstack   <none>           <none>
+text-stats-7cbcffb8d5-lhx2d   1/1     Running   0               94s   192.168.194.10    orbstack   <none>           <none>
+
+$ victim=$(kubectl -n textstats get pods -l app=text-stats -o jsonpath="{.items[0].metadata.name}"); kubectl -n textstats delete pod $victim --wait=false; date -u +"deleted $victim at %H:%M:%S"
+pod "text-stats-6898f86579-27ws2" deleted from textstats namespace
+deleted text-stats-6898f86579-27ws2 at 08:18:09
+
+$ until [ "$(kubectl -n textstats get rollout text-stats -o jsonpath="{.status.readyReplicas}")" = "$(kubectl -n textstats get rollout text-stats -o jsonpath="{.spec.replicas}")" ]; do sleep 1; done; date -u +"all replicas ready again at %H:%M:%S"
+all replicas ready again at 08:18:19
+
+$ kubectl -n textstats get pods -l app=text-stats
+NAME                          READY   STATUS        RESTARTS        AGE
+text-stats-6898f86579-8wb26   1/1     Terminating   1 (4m53s ago)   21m
+text-stats-6898f86579-tbwk7   1/1     Terminating   1 (4m53s ago)   19m
+text-stats-7cbcffb8d5-98k45   1/1     Running       0               31s
+text-stats-7cbcffb8d5-h7rd2   1/1     Running       0               4m10s
+text-stats-7cbcffb8d5-jtvkc   1/1     Running       0               12s
+text-stats-7cbcffb8d5-lhx2d   1/1     Running       0               104s
+
+$ sleep 30; echo "5xx responses in the last 2 minutes: $(fivexx)"
+5xx responses in the last 2 minutes: 0
+
+$ kubectl -n textstats delete service text-stats-stable && date -u +'deleted Service text-stats-stable at %H:%M:%S'
+service "text-stats-stable" deleted from textstats namespace
+deleted Service text-stats-stable at 08:18:50
+
+$ until kubectl -n textstats get service text-stats-stable >/dev/null 2>&1; do sleep 1; done; date -u +"Service recreated by Argo CD at %H:%M:%S"
+Service recreated by Argo CD at 08:18:51
+
+$ kubectl -n textstats patch cronjob postgres-backup -p '{"spec":{"schedule":"0 0 1 1 *"}}' && date -u +'backup schedule changed by hand at %H:%M:%S'
+cronjob.batch/postgres-backup patched
+backup schedule changed by hand at 08:18:51
+
+$ until [ "$(kubectl -n textstats get cronjob postgres-backup -o jsonpath="{.spec.schedule}")" = "*/10 * * * *" ]; do sleep 1; done; date -u +"schedule reverted to */10 by Argo CD at %H:%M:%S"
+schedule reverted to */10 by Argo CD at 08:18:53
+
+$ kubectl -n argocd get application textstats
+NAME        SYNC STATUS   HEALTH STATUS
+textstats   Synced        Healthy
+
+$ kubectl -n textstats create job backup-now --from=cronjob/postgres-backup && kubectl -n textstats wait --for=condition=complete job/backup-now --timeout=120s && kubectl -n textstats logs job/backup-now
+job.batch/backup-now created
+job.batch/backup-now condition met
+backup ok: /backups/textstats-20261126T081855Z.dump 176K, 4 dumps kept
+
+$ sql 'select count(*) as rows_before, max(id) as last_id, max(created_at) as newest_row from analyses'
+ rows_before | last_id |          newest_row           
+-------------+---------+-------------------------------
+       22024 |   22039 | 2026-11-26 08:19:01.122607+00
+(1 row)
+
+
+$ date -u +'table dropped at %H:%M:%S'; sql 'drop table analyses'
+table dropped at 08:19:01
+DROP TABLE
+
+$ sleep 10; curl -s -o /dev/null -w "POST /stats after the drop: HTTP %{http_code}\n" -X POST -H "Host: textstats.k8s.orb.local" -H "Content-Type: application/json" -d "{\"text\":\"x\"}" http://localhost/stats
+POST /stats after the drop: HTTP 503
+
+$ bash lab/restore.sh
+error: timed out waiting for the condition on jobs/restore
+# first restore attempt above: refused because the network policy had not yet admitted the new pod; restore.sh now waits for pg_isready
+$ bash lab/restore.sh
+error: timed out waiting for the condition on jobs/restore
+restoring /backups/textstats-20261126T082002Z.dump
+restore ok
+restore FAILED
+
+$ kubectl -n textstats exec postgres-0 -- sh -c 'psql -U $POSTGRES_USER -d textstats -c "select count(*) as rows_after, max(id) as last_id, max(created_at) as newest_row from analyses"'
+ERROR:  relation "analyses" does not exist
+LINE 1: ...(id) as last_id, max(created_at) as newest_row from analyses
+                                                               ^
+command terminated with exit code 1
+
+$ sleep 5; curl -s -w "
+POST /stats after the restore: HTTP %{http_code}
+" -X POST -H "Host: textstats.k8s.orb.local" -H "Content-Type: application/json" -d "{\"text\":\"after restore\"}" http://localhost/stats
+{"error":"database unavailable"}
+
+POST /stats after the restore: HTTP 503
+
+# second attempt above restored the newest dump, taken by the 08:20 schedule after the 08:19 drop, so it held no table either; restore the dump taken before the incident
+$ bash lab/restore.sh textstats-20261126T081855Z.dump
+restoring /backups/textstats-20261126T081855Z.dump
+restore ok
+restore took 9 s
+
+$ kubectl -n textstats exec postgres-0 -- sh -c 'psql -U $POSTGRES_USER -d textstats -c "select count(*) as rows_after, max(id) as last_id, max(created_at) as newest_row from analyses"'
+ rows_after | last_id |          newest_row           
+------------+---------+-------------------------------
+      22040 |   22056 | 2026-11-26 08:25:59.001554+00
+(1 row)
+
+
+$ sleep 5; curl -s -w "
+POST /stats after the restore: HTTP %{http_code}
+" -X POST -H "Host: textstats.k8s.orb.local" -H "Content-Type: application/json" -d "{\"text\":\"after restore\"}" http://localhost/stats
+{"characters":13,"id":22139,"sentences":1,"unique_words":2,"words":2}
+
+POST /stats after the restore: HTTP 200
+

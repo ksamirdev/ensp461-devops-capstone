@@ -1,0 +1,60 @@
+$ gitleaks git . --redact --no-banner --no-color
+2:37PM INF 20 commits scanned.
+2:37PM INF scanned ~109353 bytes (109.35 KB) in 86.5ms
+2:37PM INF no leaks found
+
+$ git check-ignore -v .vault-init.json
+.gitignore:7:.vault-init.json	.vault-init.json
+
+$ kubectl -n textstats get secretstore,externalsecret
+NAME                                    AGE   STATUS   CAPABILITIES   READY
+secretstore.external-secrets.io/vault   81m   Valid    ReadWrite      True
+
+NAME                                                        STORETYPE     STORE   REFRESH INTERVAL   STATUS         READY   LAST SYNC
+externalsecret.external-secrets.io/postgres-credentials     SecretStore   vault   1m                 SecretSynced   True    59s
+externalsecret.external-secrets.io/textstats-database-url   SecretStore   vault   1m                 SecretSynced   True    42s
+
+$ kubectl -n textstats get secret postgres-credentials -o json | jq -c '{name: .metadata.name, owner: .metadata.ownerReferences[0].kind, keys: (.data | keys)}'
+{"name":"postgres-credentials","owner":"ExternalSecret","keys":["password","username"]}
+
+$ tok=$(kubectl -n textstats create token textstats-secrets --audience vault --duration 10m)
+vt=$(curl -s -X POST -d "{\"role\":\"textstats\",\"jwt\":\"$tok\"}" http://vault.k8s.orb.local/v1/auth/kubernetes/login | jq -r .auth.client_token)
+echo "read secret/textstats/db       -> HTTP $(curl -s -o /dev/null -w %{http_code} -H "X-Vault-Token: $vt" http://vault.k8s.orb.local/v1/secret/data/textstats/db)"
+echo "read secret/monitoring/grafana -> HTTP $(curl -s -o /dev/null -w %{http_code} -H "X-Vault-Token: $vt" http://vault.k8s.orb.local/v1/secret/data/monitoring/grafana)"
+echo "write secret/textstats/db      -> HTTP $(curl -s -o /dev/null -w %{http_code} -X POST -d "{\"data\":{\"x\":\"y\"}}" -H "X-Vault-Token: $vt" http://vault.k8s.orb.local/v1/secret/data/textstats/db)"
+read secret/textstats/db       -> HTTP 200
+read secret/monitoring/grafana -> HTTP 403
+write secret/textstats/db      -> HTTP 403
+
+$ kubectl -n textstats get networkpolicy
+NAME                   POD-SELECTOR     AGE
+default-deny-ingress   <none>           81m
+postgres-ingress       app=postgres     81m
+text-stats-ingress     app=text-stats   81m
+
+$ kubectl -n textstats exec deploy/traffic -- sh -c "curl -s -m 3 telnet://postgres:5432 </dev/null; echo \"traffic pod to postgres:5432 curl exit=\$? (7 = refused, 28 = timed out)\""
+traffic pod to postgres:5432 curl exit=7 (7 = refused, 28 = timed out)
+
+$ kubectl -n textstats exec deploy/traffic -- sh -c "curl -s -m 3 -o /dev/null -w \"traffic pod to app pod directly: HTTP %{http_code}\" http://text-stats-stable/healthz; echo \" exit=\$?\""
+traffic pod to app pod directly: HTTP 000 exit=7
+
+$ kubectl -n textstats exec deploy/traffic -- sh -c "curl -s -m 3 -o /dev/null -w \"traffic pod through Traefik: HTTP %{http_code}\n\" -H \"Host: textstats.k8s.orb.local\" http://traefik.traefik.svc/healthz"
+traffic pod through Traefik: HTTP 200
+
+$ pod=$(kubectl -n textstats get pod -l app=text-stats -o jsonpath="{.items[0].metadata.name}"); kubectl -n textstats exec $pod -- python -c "import socket; socket.create_connection((\"postgres\", 5432), 3); print(\"app pod to postgres:5432 connected\")"
+app pod to postgres:5432 connected
+
+$ kubectl -n textstats get pods -o json | jq -r '.items[] | .metadata.name as $p | .spec.securityContext.runAsNonRoot as $nr | .spec.containers[] | "\($p)  runAsNonRoot=\(.securityContext.runAsNonRoot // $nr)  readOnlyRoot=\(.securityContext.readOnlyRootFilesystem)  privEsc=\(.securityContext.allowPrivilegeEscalation)  drop=\(.securityContext.capabilities.drop // [] | join(","))"'
+postgres-0  runAsNonRoot=true  readOnlyRoot=true  privEsc=false  drop=ALL
+postgres-backup-29928040-t2ln6  runAsNonRoot=true  readOnlyRoot=true  privEsc=false  drop=ALL
+postgres-backup-29928050-9ktpf  runAsNonRoot=true  readOnlyRoot=true  privEsc=false  drop=ALL
+text-stats-7cbcffb8d5-lhx2d  runAsNonRoot=true  readOnlyRoot=true  privEsc=false  drop=ALL
+text-stats-7cbcffb8d5-n5rm5  runAsNonRoot=true  readOnlyRoot=true  privEsc=false  drop=ALL
+text-stats-7cbcffb8d5-nqbdd  runAsNonRoot=true  readOnlyRoot=true  privEsc=false  drop=ALL
+traffic-6d9b79898c-c7c2m  runAsNonRoot=true  readOnlyRoot=true  privEsc=false  drop=ALL
+traffic-6d9b79898c-rw7rl  runAsNonRoot=true  readOnlyRoot=true  privEsc=false  drop=ALL
+
+$ pod=$(kubectl -n textstats get pod -l app=text-stats -o jsonpath="{.items[0].metadata.name}"); kubectl -n textstats exec $pod -- sh -c "id; touch /srv/text-stats/x 2>&1 || true"
+uid=10001(textstats) gid=999(textstats) groups=999(textstats)
+touch: cannot touch '/srv/text-stats/x': Read-only file system
+

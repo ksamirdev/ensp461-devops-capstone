@@ -1,0 +1,126 @@
+$ git log -3 --format='%h %an %ad %s' --date=format:%H:%M:%S origin/main
+aeca08a Samir 13:30:41 Faulty release drill: ship a config that fails 25% of /stats requests
+bc56ecf github-actions[bot] 07:55:59 release: text-stats 1.1.0 (8f8a337)
+8f8a337 Samir 13:21:45 Fix sentence count for text after the last sentence end
+
+$ git show --format= origin/main -- deploy/k8s
+diff --git a/deploy/k8s/app.yaml b/deploy/k8s/app.yaml
+index 11db5d9..e559488 100644
+--- a/deploy/k8s/app.yaml
++++ b/deploy/k8s/app.yaml
+@@ -24,6 +24,8 @@ spec:
+           env:
+             - name: DATABASE_URL
+               valueFrom: {secretKeyRef: {name: textstats-database-url, key: DATABASE_URL}}
++            # Faulty release drill: 25% of /stats requests fail on purpose
++            - {name: FAULT_RATE, value: "0.25"}
+           ports: [{containerPort: 5000}]
+           readinessProbe:
+             httpGet: {path: /readyz, port: 5000}
+
+$ until [ "$(kubectl -n argocd get application textstats -o jsonpath='{.status.sync.revision}')" = aeca08abd9e4b4fbfdee010511808f952f1b3121 ]; do sleep 2; done; echo "Argo CD synced aeca08a at $(date -u +%H:%M:%S) without a manual sync"
+Argo CD synced aeca08a at 08:03:08 without a manual sync
+
+$ last=''; while :; do s=$(rollout_state); [ "$s" != "$last" ] && echo "$(date -u +%H:%M:%S) $s" && last=$s
+  stable=$(kubectl -n textstats get rollout text-stats -o jsonpath='{.status.stableRS}')
+  case "$s" in *phase=Degraded*) break;; *phase=Healthy*) [ "$stable" != 6898f86579 ] && break;; esac; sleep 2; done; true
+08:03:08 step=9 phase=Healthy pods=3 new_version_pods=3 canary_weight=0 
+08:03:13 step=0 phase=Progressing pods=4 new_version_pods=1 canary_weight=0 more replicas need to be updated
+08:03:18 step=1 phase=Paused pods=4 new_version_pods=1 canary_weight=10 CanaryPauseStep
+08:03:55 step=2 phase=Progressing pods=4 new_version_pods=1 canary_weight=10 more replicas need to be updated
+08:04:34 step=2 phase=Progressing pods=4 new_version_pods=1 canary_weight=0 more replicas need to be updated
+08:04:37 step=2 phase=Progressing pods=4 new_version_pods=1 canary_weight=10 more replicas need to be updated
+08:04:45 step=0 phase=Degraded pods=4 new_version_pods=1 canary_weight=0 RolloutAborted: Rollout aborted update to revision 3: Step-based analysis phase error/failed: Metric "error-rate" assessed Failed due to failed (2) > failureLimit (1)
+
+$ kubectl argo rollouts get rollout text-stats -n textstats --no-color
+Name:            text-stats
+Namespace:       textstats
+Status:          ✖ Degraded
+Message:         RolloutAborted: Rollout aborted update to revision 3: Step-based analysis phase error/failed: Metric "error-rate" assessed Failed due to failed (2) > failureLimit (1)
+Strategy:        Canary
+  Step:          0/9
+  SetWeight:     0
+  ActualWeight:  0
+Images:          ghcr.io/ksamirdev/ensp461-devops-capstone:1.1.0 (stable)
+Replicas:
+  Desired:       3
+  Current:       3
+  Updated:       0
+  Ready:         1
+  Available:     1
+
+NAME                                    KIND         STATUS         AGE    INFO
+⟳ text-stats                            Rollout      ✖ Degraded     20m    
+├──# revision:3                                                            
+│  ├──⧉ text-stats-656fd57795           ReplicaSet   • ScaledDown   3m45s  canary,delay:passed
+│  │  └──□ text-stats-656fd57795-8ltkr  Pod          ◌ Terminating  3m44s  ready:0/1
+│  └──α text-stats-656fd57795-3-2       AnalysisRun  ✖ Failed       2m38s  ✖ 4
+├──# revision:2                                                            
+│  ├──⧉ text-stats-6898f86579           ReplicaSet   ◌ Progressing  10m    stable
+│  │  ├──□ text-stats-6898f86579-8wb26  Pod          ✔ Running      10m    ready:1/1
+│  │  ├──□ text-stats-6898f86579-tbwk7  Pod          ✔ Running      7m37s  ready:1/1
+│  │  └──□ text-stats-6898f86579-27ws2  Pod          ✔ Running      6m23s  ready:1/1
+│  ├──α text-stats-6898f86579-2-2       AnalysisRun  ✔ Successful   9m27s  ✔ 6
+│  ├──α text-stats-6898f86579-2-5       AnalysisRun  ✔ Successful   8m17s  ✔ 6
+│  └──α text-stats-6898f86579-2-8       AnalysisRun  ✔ Successful   7m3s   ✔ 6
+└──# revision:1                                                            
+   └──⧉ text-stats-76485fcb66           ReplicaSet   • ScaledDown   20m    
+
+$ kubectl -n textstats get analysisrun --sort-by=.metadata.creationTimestamp -o json | jq -r '.items[-3:][] | .metadata.name as $n | .status.metricResults[] | "\($n)  \(.name)  phase=\(.phase)  values=\([.measurements[].value] | join(" "))"'
+text-stats-6898f86579-2-5  p95-latency-seconds  phase=Successful  values=[0.024240131578947367] [0.02411046511627907] [0.023821428571428573]
+text-stats-6898f86579-2-5  error-rate  phase=Successful  values=[0] [0] [0]
+text-stats-6898f86579-2-8  p95-latency-seconds  phase=Successful  values=[0.0247228963328196] [0.024933292634897977] [0.024234377568232567]
+text-stats-6898f86579-2-8  error-rate  phase=Successful  values=[0] [0] [0]
+text-stats-656fd57795-3-2  p95-latency-seconds  phase=Failed  values=[0.7000000000000001] [1.7499999999999998]
+text-stats-656fd57795-3-2  error-rate  phase=Failed  values=[0.3333333333333333] [0.29999999999999993]
+
+$ kubectl -n textstats get traefikservice text-stats -o jsonpath='{range .spec.weighted.services[*]}{.name}={.weight} {end}'
+text-stats-stable=100 text-stats-canary=0 
+$ echo "requests/s by pod-template hash:"; prom "sum by (rollouts_pod_template_hash) (rate(textstats_http_requests_total{route=\"/stats\"}[1m]))"
+requests/s by pod-template hash:
+rollouts_pod_template_hash=6898f86579 2.292209320461445
+
+$ echo "5xx share by pod-template hash (2m):"; prom "sum by (rollouts_pod_template_hash) (rate(textstats_http_requests_total{route=\"/stats\",status=~\"5..\"}[2m])) / sum by (rollouts_pod_template_hash) (rate(textstats_http_requests_total{route=\"/stats\"}[2m]))"
+5xx share by pod-template hash (2m):
+rollouts_pod_template_hash=656fd57795 NaN
+rollouts_pod_template_hash=6898f86579 0.09749990137712762
+
+$ curl -s -H 'Host: textstats.k8s.orb.local' http://localhost/
+{"pod":"text-stats-6898f86579-8wb26","release":"1.1.0","service":"text-stats"}
+
+$ kubectl -n argocd get application textstats
+NAME        SYNC STATUS   HEALTH STATUS
+textstats   Synced        Degraded
+
+$ git log -1 --format='%h %an %ad %s' --date=format:%H:%M:%S
+58b57a1 Samir 13:38:37 Revert "Faulty release drill: ship a config that fails 25% of /stats requests"
+
+$ until [ "$(kubectl -n argocd get application textstats -o jsonpath='{.status.sync.revision}')" = 58b57a19da88a49880f9515a54ee80e71e1ec95a ]; do sleep 2; done; echo "Argo CD synced 58b57a1 at $(date -u +%H:%M:%S)"
+Argo CD synced 58b57a1 at 08:09:01
+
+$ until kubectl -n textstats get rollout text-stats -o jsonpath="{.status.phase}" | grep -q Healthy; do sleep 2; done; kubectl argo rollouts get rollout text-stats -n textstats --no-color | sed -n 1,20p
+Name:            text-stats
+Namespace:       textstats
+Status:          ✔ Healthy
+Strategy:        Canary
+  Step:          9/9
+  SetWeight:     100
+  ActualWeight:  100
+Images:          ghcr.io/ksamirdev/ensp461-devops-capstone:1.1.0 (stable)
+Replicas:
+  Desired:       3
+  Current:       3
+  Updated:       3
+  Ready:         3
+  Available:     3
+
+NAME                                    KIND         STATUS        AGE    INFO
+⟳ text-stats                            Rollout      ✔ Healthy     23m    
+├──# revision:4                                                           
+│  └──⧉ text-stats-6898f86579           ReplicaSet   ✔ Healthy     12m    stable
+│     ├──□ text-stats-6898f86579-8wb26  Pod          ✔ Running     12m    ready:1/1
+
+$ kubectl -n argocd get application textstats
+NAME        SYNC STATUS   HEALTH STATUS
+textstats   Synced        Healthy
+
