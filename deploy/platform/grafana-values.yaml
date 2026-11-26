@@ -29,3 +29,8 @@ dashboardProviders:
       - {name: capstone, folder: Capstone, type: file, options: {path: /var/lib/grafana/dashboards/capstone}}
 dashboardsConfigMaps:
   capstone: grafana-dashboards
+grafana.ini:
+  # Read-only dashboards without a login (wall screens, the lab screenshots); editing still needs the admin login
+  auth.anonymous:
+    enabled: true
+    org_role: Viewer

@@ -15,7 +15,7 @@ charts:
   prometheus: {repo: prometheus-community, chart: prometheus, version: 30.0.1, namespace: monitoring}
   loki: {repo: grafana, chart: loki, version: 7.7.0, namespace: monitoring}
   alloy: {repo: grafana, chart: alloy, version: 1.16.0, namespace: monitoring}
-  grafana: {repo: grafana, chart: grafana, version: 10.5.15, namespace: monitoring}
+  grafana: {repo: grafana-community, chart: grafana, version: 14.6.1, namespace: monitoring}
 
 helm_repos:
   traefik: https://traefik.github.io/charts
@@ -25,3 +25,4 @@ helm_repos:
   hashicorp: https://helm.releases.hashicorp.com
   prometheus-community: https://prometheus-community.github.io/helm-charts
   grafana: https://grafana.github.io/helm-charts
+  grafana-community: https://grafana-community.github.io/helm-charts
