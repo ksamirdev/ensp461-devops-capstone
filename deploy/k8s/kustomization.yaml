@@ -13,4 +13,4 @@ resources:
   - traffic.yaml
 images:
   - name: ghcr.io/ksamirdev/ensp461-devops-capstone
-    newTag: "1.0.0"
+    newTag: "1.1.0"
