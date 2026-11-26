@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import random
+import re
 import time
 import uuid
 
@@ -90,12 +91,17 @@ def ensure_schema():
         _schema_ready = True
 
 
+SENTENCE_END = re.compile(r"[.!?]+(?:\s|$)")
+
+
 def text_stats(text):
     words = text.split()
     return {
         "characters": len(text),
         "words": len(words),
         "unique_words": len({w.lower() for w in words}),
+        # a trailing fragment without punctuation still counts as a sentence
+        "sentences": len(SENTENCE_END.findall(text)) + (1 if text.strip() and not SENTENCE_END.search(text.rstrip() + " ") else 0),
     }
 
 

@@ -32,13 +32,20 @@ def test_home_reports_release(client):
 
 
 def test_text_stats_counts_unique_words_case_insensitively():
-    assert text_stats("Build test build") == {"characters": 16, "words": 3, "unique_words": 2}
+    assert text_stats("Build test build") == {"characters": 16, "words": 3, "unique_words": 2, "sentences": 1}
+
+
+@pytest.mark.parametrize("text, sentences", [
+    ("", 0), ("one", 1), ("One. Two!", 2), ("Is it? Yes. And more", 3), ("Wait... what?!", 2), ("v1.1.0 ships.", 1),
+])
+def test_text_stats_counts_sentences(text, sentences):
+    assert text_stats(text)["sentences"] == sentences
 
 
 def test_stats_endpoint_returns_counts(client):
     response = client.post("/stats", json={"text": "ship it"})
     assert response.status_code == 200
-    assert response.json == {"characters": 7, "words": 2, "unique_words": 2}
+    assert response.json == {"characters": 7, "words": 2, "unique_words": 2, "sentences": 1}
 
 
 @pytest.mark.parametrize("body", [{}, {"text": 42}])
