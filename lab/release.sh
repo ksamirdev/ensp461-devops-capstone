@@ -8,6 +8,8 @@ source lab/rec.sh evidence/logs/release-$NAME.log
 source lab/common.sh
 git fetch -q origin
 SHA=$(git rev-parse origin/main)
+# the stable ReplicaSet before this release: the rollout is finished when that changes (or the canary is aborted)
+OLD_STABLE=$(kubectl -n textstats get rollout text-stats -o jsonpath='{.status.stableRS}')
 DASH=http://rollouts.k8s.orb.local/rollouts/rollout/textstats/text-stats
 
 rec git log -3 --format="'%h %an %ad %s'" --date=format:%H:%M:%S origin/main
@@ -16,8 +18,9 @@ rec "until [ \"\$(kubectl -n argocd get application textstats -o jsonpath='{.sta
 
 ( until rollout_state | grep -qE '^step=2 |phase=Degraded'; do sleep 2; done; shot "release-$NAME-canary-10" "$DASH" ) &
 SNAP=$!
-rec 'last=""; while :; do s=$(rollout_state); [ "$s" != "$last" ] && echo "$(date -u +%H:%M:%S) $s" && last=$s
-  case "$s" in *"phase=Healthy"*|*"phase=Degraded"*) break;; esac; sleep 2; done'
+rec "last=''; while :; do s=\$(rollout_state); [ \"\$s\" != \"\$last\" ] && echo \"\$(date -u +%H:%M:%S) \$s\" && last=\$s
+  stable=\$(kubectl -n textstats get rollout text-stats -o jsonpath='{.status.stableRS}')
+  case \"\$s\" in *phase=Degraded*) break;; *phase=Healthy*) [ \"\$stable\" != $OLD_STABLE ] && break;; esac; sleep 2; done; true"
 wait $SNAP || true
 shot "release-$NAME-rollout" "$DASH"
 rec kubectl argo rollouts get rollout text-stats -n textstats --no-color
