@@ -117,12 +117,17 @@ jobs:
           username: ${{ github.actor }}
           # Short-lived token issued for this run only; no stored registry password
           password: ${{ secrets.GITHUB_TOKEN }}
-      - run: |
+      - name: Push the image; a release tag is immutable, so an existing one is never overwritten
+        run: |
           docker load -i image.tar
           repo=ghcr.io/${GITHUB_REPOSITORY,,}
-          for tag in ${{ needs.build.outputs.release }} sha-${GITHUB_SHA::7}; do
-            docker tag text-stats:ci "$repo:$tag" && docker push "$repo:$tag"
-          done
+          release=${{ needs.build.outputs.release }}
+          docker tag text-stats:ci "$repo:sha-${GITHUB_SHA::7}" && docker push -q "$repo:sha-${GITHUB_SHA::7}"
+          if docker manifest inspect "$repo:$release" >/dev/null 2>&1; then
+            echo "$repo:$release already published; bump VERSION to release this commit"
+          else
+            docker tag text-stats:ci "$repo:$release" && docker push -q "$repo:$release"
+          fi
 
   deliver:
     name: Release through GitOps
