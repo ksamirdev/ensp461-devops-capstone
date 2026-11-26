@@ -25,13 +25,17 @@ spec:
             - name: DATABASE_URL
               valueFrom: {secretKeyRef: {name: textstats-database-url, key: DATABASE_URL}}
           ports: [{containerPort: 5000}]
+          # Readiness does not depend on the database: during a database outage every pod keeps answering
+          # (503 on writes) instead of all leaving the Service at once, and the errors stay visible in the metrics
           readinessProbe:
-            httpGet: {path: /readyz, port: 5000}
+            httpGet: {path: /healthz, port: 5000}
             periodSeconds: 3
+            timeoutSeconds: 3
             failureThreshold: 2
           livenessProbe:
             httpGet: {path: /healthz, port: 5000}
             periodSeconds: 10
+            timeoutSeconds: 5
           resources:
             requests: {cpu: 50m, memory: 64Mi}
             limits: {cpu: 500m, memory: 256Mi}
