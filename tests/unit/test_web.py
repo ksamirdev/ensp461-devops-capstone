@@ -110,3 +110,8 @@ def test_probes_are_not_logged(client, caplog):
         client.get("/healthz")
         web.log.removeHandler(caplog.handler)
     assert caplog.records == []
+
+
+def test_bodies_over_100_kb_are_rejected(client):
+    assert client.post("/stats", json={"text": "x" * 200_000}).status_code == 413
+    assert client.post("/stats", json={"text": "x" * 50_000}).status_code == 200

@@ -25,6 +25,8 @@ FAULT_RATE = float(os.environ.get("FAULT_RATE", "0"))
 FAULT_LATENCY_MS = float(os.environ.get("FAULT_LATENCY_MS", "0"))
 
 app = Flask(__name__)
+# Bound the work one request can cause; larger bodies get 413 before they are read
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024
 
 REQUESTS = Counter(
     "textstats_http_requests_total", "HTTP requests served", ["method", "route", "status"]
