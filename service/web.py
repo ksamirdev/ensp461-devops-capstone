@@ -100,8 +100,8 @@ def text_stats(text):
         "characters": len(text),
         "words": len(words),
         "unique_words": len({w.lower() for w in words}),
-        # a trailing fragment without punctuation still counts as a sentence
-        "sentences": len(SENTENCE_END.findall(text)) + (1 if text.strip() and not SENTENCE_END.search(text.rstrip() + " ") else 0),
+        # text between sentence ends; a trailing fragment without punctuation still counts
+        "sentences": sum(1 for part in SENTENCE_END.split(text) if part.strip()),
     }
 
 
