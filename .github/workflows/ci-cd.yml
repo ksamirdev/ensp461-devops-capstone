@@ -1,0 +1,143 @@
+name: ci-cd
+
+# Commit to production: every job is a gate. The image is published only if every check passed,
+# and "deliver" releases it by committing the new tag to deploy/k8s, which Argo CD then rolls out as a canary.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["deploy/k8s/kustomization.yaml", "evidence/**", "reports/**", "**.md"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: false
+
+# arm64 runners: the lab cluster runs on Apple silicon and pulls this exact image
+jobs:
+  quality:
+    name: Lint and unit tests
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: {python-version: "3.13", cache: pip}
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: pytest tests/unit -v --cov=service --cov-fail-under=75 --junitxml=test-results-unit.xml
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with: {name: unit-test-results, path: test-results-unit.xml}
+
+  security:
+    name: Security scans (secrets, SAST, dependencies, IaC)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with: {fetch-depth: 0}
+      - name: gitleaks - no secret anywhere in Git history
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 git /repo --redact --verbose
+      - uses: actions/setup-python@v7
+        with: {python-version: "3.13", cache: pip}
+      - run: pip install bandit==1.9.4 pip-audit==2.10.1
+      - name: bandit - static analysis of the application code
+        run: bandit -r service -ll
+      - name: pip-audit - known vulnerabilities in pinned dependencies
+        run: pip-audit -r requirements.txt --strict
+      - name: trivy - misconfigurations in Dockerfile and Kubernetes manifests (HIGH/CRITICAL fail)
+        run: |
+          docker run --rm -v "$PWD:/src" mirror.gcr.io/aquasec/trivy:0.76.2 config --skip-dirs /src/.venv \
+            --severity HIGH,CRITICAL --exit-code 1 /src
+
+  integration:
+    name: Integration tests (PostgreSQL)
+    needs: [quality]
+    runs-on: ubuntu-24.04-arm
+    services:
+      postgres:
+        image: mirror.gcr.io/library/postgres:18
+        env: {POSTGRES_PASSWORD: ci-only}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 15
+    env:
+      # Disposable database that exists only inside this job; not a real credential
+      DATABASE_URL: postgresql://postgres:ci-only@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: {python-version: "3.13", cache: pip}
+      - run: pip install -r requirements-dev.txt
+      - run: pytest tests/integration -v --junitxml=test-results-integration.xml
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with: {name: integration-test-results, path: test-results-integration.xml}
+
+  build:
+    name: Build, scan and smoke-test the image
+    needs: [integration, security]
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: version
+        run: echo "release=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+      - run: docker build --build-arg RELEASE=${{ steps.version.outputs.release }} -t text-stats:ci .
+      - name: trivy - fixable HIGH/CRITICAL vulnerabilities in the image fail the build
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock mirror.gcr.io/aquasec/trivy:0.76.2 image \
+            --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 text-stats:ci
+      - name: Smoke test - the container becomes healthy and serves requests
+        run: |
+          docker run -d --name smoke -p 5000:5000 text-stats:ci
+          for i in $(seq 30); do [ "$(docker inspect -f '{{.State.Health.Status}}' smoke)" = healthy ] && break; sleep 1; done
+          docker inspect -f 'health={{.State.Health.Status}} user={{.Config.User}}' smoke
+          curl -fsS -X POST -H 'Content-Type: application/json' -d '{"text":"smoke test"}' localhost:5000/stats
+          curl -fsS localhost:5000/ | grep -q '"release":"${{ steps.version.outputs.release }}"'
+      - run: docker save text-stats:ci -o image.tar
+      - uses: actions/upload-artifact@v7
+        with: {name: image, path: image.tar, retention-days: 1}
+
+  publish:
+    name: Publish to GHCR
+    needs: [build]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04-arm
+    permissions: {contents: read, packages: write}
+    steps:
+      - uses: actions/download-artifact@v8
+        with: {name: image}
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # Short-lived token issued for this run only; no stored registry password
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: |
+          docker load -i image.tar
+          repo=ghcr.io/${GITHUB_REPOSITORY,,}
+          for tag in ${{ needs.build.outputs.release }} sha-${GITHUB_SHA::7}; do
+            docker tag text-stats:ci "$repo:$tag" && docker push "$repo:$tag"
+          done
+
+  deliver:
+    name: Release through GitOps
+    needs: [build, publish]
+    runs-on: ubuntu-24.04-arm
+    environment: production
+    permissions: {contents: write}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Point deploy/k8s at the new image and commit; Argo CD rolls it out as a canary
+        run: |
+          release=${{ needs.build.outputs.release }}
+          sed -i "s/^    newTag: .*/    newTag: \"$release\"/" deploy/k8s/kustomization.yaml
+          if git diff --quiet; then echo "deploy/k8s already at $release"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "release: text-stats $release (${GITHUB_SHA::7})"
+          git push
