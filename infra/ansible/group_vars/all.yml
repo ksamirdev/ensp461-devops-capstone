@@ -1,7 +1,9 @@
 kube_context: orbstack
 repo_root: "{{ playbook_dir }}/../.."
 platform_dir: "{{ repo_root }}/deploy/platform"
-vault_url: http://vault.k8s.orb.local
+# Traefik on the Mac's port 80, picked by Host header: Python's resolver does not see OrbStack's *.k8s.orb.local names
+vault_url: http://127.0.0.1
+vault_host: {Host: vault.k8s.orb.local}
 # Unseal keys and root token: written once, mode 600, gitignored, never printed
 vault_init_file: "{{ repo_root }}/.vault-init.json"
 

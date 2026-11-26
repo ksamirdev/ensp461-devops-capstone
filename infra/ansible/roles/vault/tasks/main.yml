@@ -1,6 +1,7 @@
 - name: Wait for the Vault API behind Traefik
   ansible.builtin.uri:
     url: "{{ vault_url }}/v1/sys/health?sealedcode=200&uninitcode=200"
+    headers: "{{ vault_host }}"
   register: health
   until: health.status == 200
   retries: 60
@@ -13,6 +14,7 @@
       ansible.builtin.uri:
         url: "{{ vault_url }}/v1/sys/init"
         method: PUT
+        headers: "{{ vault_host }}"
         body_format: json
         body: {secret_shares: 5, secret_threshold: 3}
       register: init
@@ -33,6 +35,7 @@
   ansible.builtin.uri:
     url: "{{ vault_url }}/v1/sys/unseal"
     method: PUT
+    headers: "{{ vault_host }}"
     body_format: json
     body: {key: "{{ item }}"}
   loop: "{{ vault_init['keys_base64'][:3] }}"
@@ -42,7 +45,7 @@
 - name: Configure Vault
   module_defaults:
     ansible.builtin.uri:
-      headers: {X-Vault-Token: "{{ vault_init.root_token }}"}
+      headers: "{{ vault_host | combine({'X-Vault-Token': vault_init.root_token}) }}"
       body_format: json
       status_code: [200, 204]
   block:
