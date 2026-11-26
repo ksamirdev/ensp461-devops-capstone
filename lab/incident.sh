@@ -5,9 +5,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 source lab/rec.sh evidence/logs/incident.log
 source lab/common.sh
-kubectl -n monitoring port-forward svc/loki 13100:3100 >/dev/null 2>&1 &
+kubectl -n monitoring port-forward svc/loki 23100:3100 >/dev/null 2>&1 &
 PF=$!; trap 'kill $PF' EXIT
-LOKI=http://127.0.0.1:13100
+LOKI=http://127.0.0.1:23100
 logq() { curl -s -G $LOKI/loki/api/v1/query_range --data-urlencode "query=$1" --data-urlencode "since=${2:-10m}" --data-urlencode limit=${3:-5} \
   | jq -r '.data.result[] | (.stream | "\(.pod // "") \(.level // "")") as $s | .values[] | "\($s)  \(.[1])"' | head -${3:-5}; }
 export -f logq; export LOKI
