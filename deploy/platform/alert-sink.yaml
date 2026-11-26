@@ -1,0 +1,51 @@
+# Stand-in for PagerDuty (/pager) and Slack (/chat): logs one line per alert Alertmanager delivers,
+# so notification routing can be checked from its logs (and in Loki).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-sink
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: alert-sink}
+  template:
+    metadata:
+      labels: {app: alert-sink}
+    spec:
+      containers:
+        - name: sink
+          image: mirror.gcr.io/library/python:3.13-slim
+          command: [python, -u, -c]
+          args:
+            - |
+              import json, time
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+              class H(BaseHTTPRequestHandler):
+                  def do_POST(self):
+                      body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                      for a in body["alerts"]:
+                          print(json.dumps({"ts": time.strftime("%H:%M:%S", time.gmtime()), "receiver": self.path.strip("/"),
+                                            "status": a["status"], "alertname": a["labels"]["alertname"],
+                                            "severity": a["labels"].get("severity"), "summary": a["annotations"].get("summary")}))
+                      self.send_response(200); self.end_headers()
+                  def log_message(self, *args): pass
+              HTTPServer(("", 8080), H).serve_forever()
+          ports: [{containerPort: 8080}]
+          resources:
+            requests: {cpu: 5m, memory: 24Mi}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alert-sink
+  namespace: monitoring
+spec:
+  selector: {app: alert-sink}
+  ports: [{port: 8080}]

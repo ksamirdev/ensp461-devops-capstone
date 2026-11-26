@@ -1,0 +1,23 @@
+# Edge router for every HTTP entry point (app, Grafana, Prometheus, Argo CD, Vault UI).
+# OrbStack publishes LoadBalancer Services on the Mac, and *.k8s.orb.local resolves to them.
+service:
+  type: LoadBalancer
+ports:
+  websecure:
+    expose: {default: false}
+providers:
+  kubernetesCRD:
+    enabled: true
+    allowCrossNamespace: false
+  kubernetesIngress:
+    enabled: true
+metrics:
+  prometheus:
+    entryPoint: metrics
+deployment:
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9100"
+resources:
+  requests: {cpu: 50m, memory: 64Mi}
+  limits: {memory: 256Mi}

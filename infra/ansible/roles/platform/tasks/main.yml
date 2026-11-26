@@ -1,0 +1,18 @@
+- name: Helm repositories
+  kubernetes.core.helm_repository:
+    name: "{{ item.key }}"
+    repo_url: "{{ item.value }}"
+  loop: "{{ helm_repos | dict2items }}"
+  loop_control: {label: "{{ item.key }}"}
+
+- name: Platform releases
+  kubernetes.core.helm:
+    name: "{{ item }}"
+    chart_ref: "{{ charts[item].repo }}/{{ charts[item].chart }}"
+    chart_version: "{{ charts[item].version }}"
+    release_namespace: "{{ charts[item].namespace }}"
+    create_namespace: true
+    values_files: ["{{ platform_dir }}/{{ item }}-values.yaml"]
+    # Vault reports ready only after it is unsealed by the next role
+    wait: "{{ item != 'vault' }}"
+  loop: [traefik, metrics-server, argocd, argo-rollouts, external-secrets, vault]

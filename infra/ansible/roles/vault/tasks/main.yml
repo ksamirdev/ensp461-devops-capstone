@@ -1,0 +1,136 @@
+- name: Wait for the Vault API behind Traefik
+  ansible.builtin.uri:
+    url: "{{ vault_url }}/v1/sys/health?sealedcode=200&uninitcode=200"
+  register: health
+  until: health.status == 200
+  retries: 60
+  delay: 3
+
+- name: Initialise Vault once (5 key shares, any 3 unseal)
+  when: not health.json.initialized
+  block:
+    - name: Initialise
+      ansible.builtin.uri:
+        url: "{{ vault_url }}/v1/sys/init"
+        method: PUT
+        body_format: json
+        body: {secret_shares: 5, secret_threshold: 3}
+      register: init
+      no_log: true
+    - name: Keep the unseal keys and root token on the control node only
+      ansible.builtin.copy:
+        content: "{{ init.json | to_nice_json }}"
+        dest: "{{ vault_init_file }}"
+        mode: "0600"
+      no_log: true
+
+- name: Read the unseal keys and root token
+  ansible.builtin.set_fact:
+    vault_init: "{{ lookup('file', vault_init_file) | from_json }}"
+  no_log: true
+
+- name: Unseal with three of the five keys
+  ansible.builtin.uri:
+    url: "{{ vault_url }}/v1/sys/unseal"
+    method: PUT
+    body_format: json
+    body: {key: "{{ item }}"}
+  loop: "{{ vault_init['keys_base64'][:3] }}"
+  when: health.json.sealed
+  no_log: true
+
+- name: Configure Vault
+  module_defaults:
+    ansible.builtin.uri:
+      headers: {X-Vault-Token: "{{ vault_init.root_token }}"}
+      body_format: json
+      status_code: [200, 204]
+  block:
+    - name: List secret engines, auth methods and audit devices
+      ansible.builtin.uri: {url: "{{ vault_url }}/v1/sys/{{ item }}"}
+      loop: [mounts, auth, audit]
+      register: current
+    - name: KV version 2 engine at secret/
+      ansible.builtin.uri:
+        url: "{{ vault_url }}/v1/sys/mounts/secret"
+        method: POST
+        body: {type: kv, options: {version: "2"}}
+      when: "'secret/' not in current.results[0].json.data"
+      changed_when: true
+    - name: Kubernetes auth method
+      ansible.builtin.uri:
+        url: "{{ vault_url }}/v1/sys/auth/kubernetes"
+        method: POST
+        body: {type: kubernetes}
+      when: "'kubernetes/' not in current.results[1].json.data"
+      changed_when: true
+    - name: Audit log of every request
+      ansible.builtin.uri:
+        url: "{{ vault_url }}/v1/sys/audit/file"
+        method: PUT
+        body: {type: file, options: {file_path: /vault/audit/audit.log}}
+      when: "'file/' not in current.results[2].json.data"
+      changed_when: true
+    - name: Read current Kubernetes auth config
+      ansible.builtin.uri: {url: "{{ vault_url }}/v1/auth/kubernetes/config", status_code: [200, 404]}
+      register: k8s_config
+    - name: Vault validates service-account tokens against this cluster
+      ansible.builtin.uri:
+        url: "{{ vault_url }}/v1/auth/kubernetes/config"
+        method: POST
+        body: {kubernetes_host: "https://kubernetes.default.svc"}
+      when: k8s_config.status == 404 or k8s_config.json.data.kubernetes_host != 'https://kubernetes.default.svc'
+      changed_when: true
+    - name: Read policies
+      ansible.builtin.uri: {url: "{{ vault_url }}/v1/sys/policies/acl/{{ item.name }}", status_code: [200, 404]}
+      loop: "{{ vault_policies }}"
+      loop_control: {label: "{{ item.name }}"}
+      register: policies
+    - name: Least-privilege read policies, one per namespace
+      ansible.builtin.uri:
+        url: "{{ vault_url }}/v1/sys/policies/acl/{{ item.item.name }}"
+        method: PUT
+        body: {policy: "{{ item.item.policy }}"}
+      loop: "{{ policies.results }}"
+      loop_control: {label: "{{ item.item.name }}"}
+      when: item.status == 404 or item.json.data.policy != item.item.policy
+      changed_when: true
+    - name: Read Kubernetes auth roles
+      ansible.builtin.uri: {url: "{{ vault_url }}/v1/auth/kubernetes/role/{{ item.name }}", status_code: [200, 404]}
+      loop: "{{ vault_roles }}"
+      loop_control: {label: "{{ item.name }}"}
+      register: roles
+    - name: Bind each policy to one service account in one namespace, 15-minute tokens
+      ansible.builtin.uri:
+        url: "{{ vault_url }}/v1/auth/kubernetes/role/{{ item.item.name }}"
+        method: POST
+        body:
+          bound_service_account_names: ["{{ item.item.sa }}"]
+          bound_service_account_namespaces: ["{{ item.item.namespace }}"]
+          policies: ["{{ item.item.name }}-read"]
+          audience: vault
+          token_ttl: 900
+      loop: "{{ roles.results }}"
+      loop_control: {label: "{{ item.item.name }}"}
+      when: >-
+        item.status == 404 or item.json.data.policies != [item.item.name ~ '-read']
+        or item.json.data.bound_service_account_namespaces != [item.item.namespace]
+      changed_when: true
+    - name: Check which credentials exist
+      ansible.builtin.uri: {url: "{{ vault_url }}/v1/secret/data/{{ item.path }}", status_code: [200, 404]}
+      loop: "{{ vault_secrets }}"
+      loop_control: {label: "{{ item.path }}"}
+      register: secrets
+    - name: Generate missing credentials straight into Vault (40 random characters, never printed)
+      ansible.builtin.uri:
+        url: "{{ vault_url }}/v1/secret/data/{{ item.item.path }}"
+        method: POST
+        body:
+          data:
+            username: "{{ item.item.username }}"
+            password: "{{ lookup('ansible.builtin.password', '/dev/null', length=40, chars=['ascii_letters', 'digits']) }}"
+      loop: "{{ secrets.results }}"
+      loop_control: {label: "{{ item.item.path }}"}
+      when: item.status == 404
+      changed_when: true
+      no_log: true

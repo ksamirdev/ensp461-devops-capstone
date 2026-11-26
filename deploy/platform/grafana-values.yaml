@@ -1,0 +1,31 @@
+# Admin login comes from Vault through External Secrets (monitoring-secrets.yaml), never from Git.
+admin:
+  existingSecret: grafana-admin
+  userKey: username
+  passwordKey: password
+ingress:
+  enabled: true
+  ingressClassName: traefik
+  hosts: [grafana.k8s.orb.local]
+persistence:
+  enabled: false   # datasources and dashboards are provisioned from Git on every start
+resources:
+  requests: {cpu: 20m, memory: 96Mi}
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - {name: Prometheus, uid: prometheus, type: prometheus, url: "http://prometheus-server.monitoring.svc", isDefault: true}
+      - {name: Loki, uid: loki, type: loki, url: "http://loki.monitoring.svc:3100"}
+      - name: Alertmanager
+        uid: alertmanager
+        type: alertmanager
+        url: http://prometheus-alertmanager.monitoring.svc:9093
+        jsonData: {implementation: prometheus}
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - {name: capstone, folder: Capstone, type: file, options: {path: /var/lib/grafana/dashboards/capstone}}
+dashboardsConfigMaps:
+  capstone: grafana-dashboards

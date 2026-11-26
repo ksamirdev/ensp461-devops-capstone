@@ -1,0 +1,42 @@
+- name: Prometheus with Alertmanager, Loki and Alloy
+  kubernetes.core.helm:
+    name: "{{ item }}"
+    chart_ref: "{{ charts[item].repo }}/{{ charts[item].chart }}"
+    chart_version: "{{ charts[item].version }}"
+    release_namespace: monitoring
+    create_namespace: true
+    values_files: ["{{ platform_dir }}/{{ item }}-values.yaml"]
+  loop: [prometheus, loki, alloy]
+
+- name: Alert receiver and Grafana's Vault-backed admin secret
+  kubernetes.core.k8s:
+    src: "{{ platform_dir }}/{{ item }}"
+    wait: true
+  loop: [alert-sink.yaml, monitoring-secrets.yaml]
+
+- name: Wait for External Secrets to copy the Grafana login from Vault
+  kubernetes.core.k8s_info:
+    kind: Secret
+    namespace: monitoring
+    name: grafana-admin
+  register: grafana_admin
+  until: grafana_admin.resources | length == 1
+  retries: 30
+  delay: 2
+
+- name: Dashboards from Git
+  kubernetes.core.k8s:
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata: {name: grafana-dashboards, namespace: monitoring}
+      data:
+        textstats.json: "{{ lookup('file', platform_dir + '/dashboards/textstats.json') }}"
+
+- name: Grafana
+  kubernetes.core.helm:
+    name: grafana
+    chart_ref: grafana/grafana
+    chart_version: "{{ charts.grafana.version }}"
+    release_namespace: monitoring
+    values_files: ["{{ platform_dir }}/grafana-values.yaml"]

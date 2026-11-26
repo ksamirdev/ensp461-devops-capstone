@@ -1,0 +1,23 @@
+# One Vault server with file storage. Not dev mode: it starts sealed, is initialised once with
+# 5 key shares (threshold 3) and every restart needs an operator unseal (infra/ansible, role vault).
+injector:
+  enabled: false
+server:
+  standalone:
+    enabled: true
+  dataStorage:
+    size: 1Gi
+  auditStorage:
+    enabled: true
+    size: 1Gi
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts: [{host: vault.k8s.orb.local}]
+  # The readiness probe fails while sealed, which would hide the Service from the unseal step
+  readinessProbe:
+    path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+ui:
+  enabled: true

@@ -1,0 +1,5 @@
+# Resource metrics for the HorizontalPodAutoscaler and kubectl top.
+# The OrbStack kubelet serves a self-signed certificate, so TLS verification to it is skipped (lab only).
+args: [--kubelet-insecure-tls]
+resources:
+  requests: {cpu: 20m, memory: 48Mi}

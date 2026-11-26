@@ -1,0 +1,13 @@
+vault_policies:
+  - name: textstats-read
+    policy: |
+      path "secret/data/textstats/*" { capabilities = ["read"] }
+  - name: monitoring-read
+    policy: |
+      path "secret/data/monitoring/*" { capabilities = ["read"] }
+vault_roles:
+  - {name: textstats, sa: textstats-secrets, namespace: textstats}
+  - {name: monitoring, sa: monitoring-secrets, namespace: monitoring}
+vault_secrets:
+  - {path: textstats/db, username: textstats}
+  - {path: monitoring/grafana, username: admin}

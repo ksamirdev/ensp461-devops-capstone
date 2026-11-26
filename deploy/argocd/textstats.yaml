@@ -1,0 +1,37 @@
+# Argo CD keeps the textstats namespace identical to deploy/k8s on main: new commits are applied
+# within a minute, manual changes are reverted (selfHeal), resources removed from Git are deleted (prune).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: textstats
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ksamirdev/ensp461-devops-capstone.git
+    targetRevision: main
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: textstats
+  # Argo Rollouts owns these fields during a release; Argo CD must not undo them
+  ignoreDifferences:
+    - group: traefik.io
+      kind: TraefikService
+      jsonPointers: [/spec/weighted/services]
+    - kind: Service
+      name: text-stats-stable
+      jsonPointers: [/spec/selector]
+    - kind: Service
+      name: text-stats-canary
+      jsonPointers: [/spec/selector]
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff: {duration: 10s, factor: 2, maxDuration: 3m}

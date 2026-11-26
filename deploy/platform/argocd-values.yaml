@@ -1,0 +1,31 @@
+# Argo CD core components only: no Dex SSO, no notifications, no ApplicationSets (one Application).
+dex:
+  enabled: false
+notifications:
+  enabled: false
+applicationSet:
+  replicas: 0
+configs:
+  params:
+    # TLS ends at Traefik; the server itself listens on plain HTTP inside the cluster
+    server.insecure: true
+  cm:
+    # Poll Git every 60 s: the cluster is not reachable from GitHub, so pull instead of webhooks
+    timeout.reconciliation: 60s
+    # Argo Rollouts health checks are built into Argo CD; nothing else to configure
+server:
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hostname: argocd.k8s.orb.local
+  resources:
+    requests: {cpu: 20m, memory: 64Mi}
+controller:
+  resources:
+    requests: {cpu: 50m, memory: 192Mi}
+repoServer:
+  resources:
+    requests: {cpu: 20m, memory: 64Mi}
+redis:
+  resources:
+    requests: {cpu: 10m, memory: 32Mi}

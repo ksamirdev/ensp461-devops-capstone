@@ -1,0 +1,27 @@
+kube_context: orbstack
+repo_root: "{{ playbook_dir }}/../.."
+platform_dir: "{{ repo_root }}/deploy/platform"
+vault_url: http://vault.k8s.orb.local
+# Unseal keys and root token: written once, mode 600, gitignored, never printed
+vault_init_file: "{{ repo_root }}/.vault-init.json"
+
+charts:
+  traefik: {repo: traefik, chart: traefik, version: 43.0.0, namespace: traefik}
+  metrics-server: {repo: metrics-server, chart: metrics-server, version: 3.14.0, namespace: kube-system}
+  argocd: {repo: argo, chart: argo-cd, version: 10.20.0, namespace: argocd}
+  argo-rollouts: {repo: argo, chart: argo-rollouts, version: 2.43.12, namespace: argo-rollouts}
+  external-secrets: {repo: external-secrets, chart: external-secrets, version: 2.15.0, namespace: external-secrets}
+  vault: {repo: hashicorp, chart: vault, version: 0.34.1, namespace: vault}
+  prometheus: {repo: prometheus-community, chart: prometheus, version: 30.0.1, namespace: monitoring}
+  loki: {repo: grafana, chart: loki, version: 7.7.0, namespace: monitoring}
+  alloy: {repo: grafana, chart: alloy, version: 1.16.0, namespace: monitoring}
+  grafana: {repo: grafana, chart: grafana, version: 10.5.15, namespace: monitoring}
+
+helm_repos:
+  traefik: https://traefik.github.io/charts
+  metrics-server: https://kubernetes-sigs.github.io/metrics-server/
+  argo: https://argoproj.github.io/argo-helm
+  external-secrets: https://charts.external-secrets.io
+  hashicorp: https://helm.releases.hashicorp.com
+  prometheus-community: https://prometheus-community.github.io/helm-charts
+  grafana: https://grafana.github.io/helm-charts

@@ -1,0 +1,18 @@
+# Builds the whole capstone platform on the cluster from an empty state. Idempotent: a second run
+# reports ok for every task and changed=0, which is how drift from this definition is detected.
+- name: Capstone platform
+  hosts: control
+  gather_facts: false
+  module_defaults:
+    kubernetes.core.helm: {kube_context: "{{ kube_context }}", wait: true, timeout: 10m}
+    kubernetes.core.k8s: {context: "{{ kube_context }}"}
+    kubernetes.core.k8s_info: {context: "{{ kube_context }}"}
+  roles:
+    - role: platform        # ingress, autoscaling metrics, GitOps and progressive delivery controllers, secrets
+      tags: [platform]
+    - role: vault           # initialise, unseal and configure Vault; generate credentials
+      tags: [vault]
+    - role: observability   # Prometheus + Alertmanager, Loki + Alloy, Grafana
+      tags: [observability]
+    - role: gitops          # hand the application over to Argo CD
+      tags: [gitops]

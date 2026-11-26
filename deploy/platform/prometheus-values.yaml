@@ -1,0 +1,116 @@
+# Prometheus server, Alertmanager, kube-state-metrics and node-exporter.
+# The default "kubernetes-pods" job scrapes pods annotated prometheus.io/scrape and copies pod labels
+# onto every series, so canary and stable pods are told apart by rollouts_pod_template_hash.
+prometheus-pushgateway:
+  enabled: false
+kube-state-metrics:
+  resources:
+    requests: {cpu: 10m, memory: 32Mi}
+prometheus-node-exporter:
+  resources:
+    requests: {cpu: 10m, memory: 16Mi}
+server:
+  global:
+    scrape_interval: 10s
+    scrape_timeout: 8s
+    evaluation_interval: 10s
+  retention: 3d
+  persistentVolume:
+    size: 2Gi
+  image:
+    repository: prom/prometheus   # Docker Hub copy of the same release
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts: [prometheus.k8s.orb.local]
+  resources:
+    requests: {cpu: 50m, memory: 256Mi}
+alertmanager:
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts:
+      - host: alertmanager.k8s.orb.local
+        paths: [{path: /, pathType: Prefix}]
+  persistence:
+    size: 256Mi
+  resources:
+    requests: {cpu: 10m, memory: 32Mi}
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      receiver: team-chat
+      # One notification per alert name and namespace, not one per pod
+      group_by: [alertname, namespace]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        - matchers: ['severity="critical"']
+          receiver: oncall-pager
+          group_wait: 10s
+          repeat_interval: 1h
+    # While the whole service is down, the error-rate and latency alerts add nothing: suppress them
+    inhibit_rules:
+      - source_matchers: ['alertname="TextstatsDown"']
+        target_matchers: ['severity="warning"']
+        equal: [namespace]
+    # Both receivers are webhooks into alert-sink, a stand-in for PagerDuty and Slack that logs every notification
+    receivers:
+      - name: oncall-pager
+        webhook_configs:
+          - url: http://alert-sink.monitoring.svc:8080/pager
+            send_resolved: true
+      - name: team-chat
+        webhook_configs:
+          - url: http://alert-sink.monitoring.svc:8080/chat
+            send_resolved: true
+serverFiles:
+  recording_rules.yml:
+    groups:
+      - name: textstats-slo
+        rules:
+          # Share of /stats requests that failed with 5xx (the SLI behind the 99.5% availability SLO)
+          - record: textstats:error_ratio:rate5m
+            expr: |
+              (sum(rate(textstats_http_requests_total{route="/stats",status=~"5.."}[5m])) or vector(0))
+              / sum(rate(textstats_http_requests_total{route="/stats"}[5m]))
+          - record: textstats:latency_p95_seconds:rate5m
+            expr: histogram_quantile(0.95, sum by (le) (rate(textstats_http_request_duration_seconds_bucket{route="/stats"}[5m])))
+          - record: textstats:requests:rate5m
+            expr: sum(rate(textstats_http_requests_total{route="/stats"}[5m]))
+  alerting_rules.yml:
+    groups:
+      - name: textstats
+        rules:
+          - alert: TextstatsHighErrorRate
+            expr: textstats:error_ratio:rate5m > 0.05
+            for: 2m
+            labels: {severity: critical, namespace: textstats}
+            annotations:
+              summary: "text-stats 5xx ratio is {{ $value | humanizePercentage }} (threshold 5%)"
+              runbook: "Check the latest release (kubectl argo rollouts get rollout text-stats -n textstats) and roll back if it is new."
+          - alert: TextstatsHighLatency
+            expr: textstats:latency_p95_seconds:rate5m > 0.25
+            for: 5m
+            labels: {severity: warning, namespace: textstats}
+            annotations:
+              summary: "text-stats p95 latency is {{ $value | humanizeDuration }} (threshold 250ms)"
+          - alert: TextstatsDown
+            expr: sum(up{namespace="textstats", app="text-stats"}) == 0 or absent(up{namespace="textstats", app="text-stats"})
+            for: 1m
+            labels: {severity: critical, namespace: textstats}
+            annotations:
+              summary: "No text-stats pod is answering Prometheus scrapes"
+          - alert: TextstatsPodRestarting
+            expr: increase(kube_pod_container_status_restarts_total{namespace="textstats"}[15m]) > 2
+            labels: {severity: warning, namespace: textstats}
+            annotations:
+              summary: "{{ $labels.pod }} restarted {{ $value | humanize }} times in 15 minutes"
+          - alert: PostgresBackupStale
+            expr: time() - kube_cronjob_status_last_successful_time{namespace="textstats", cronjob="postgres-backup"} > 1800
+            for: 5m
+            labels: {severity: warning, namespace: textstats}
+            annotations:
+              summary: "No successful database backup for {{ $value | humanizeDuration }}"
